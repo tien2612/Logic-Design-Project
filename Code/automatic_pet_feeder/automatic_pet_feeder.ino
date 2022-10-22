@@ -15,7 +15,9 @@
 #define M_MODE      6     // Set schedule for minute
 #define S_MODE      7     // Set schedule for second
 #define TIME_NOTHING_CHANGES  10000
-OneButton btn1(51, true);
+
+OneButton button1(51, LOW);
+// Declared for calculate time
 unsigned long startMillis;  // Some global variables available anywhere in the program
 unsigned long currentMillis; // Current time since the program started 
 
@@ -23,13 +25,12 @@ int MAX_FOOD_PER_DAY;
 int remaining_food;
 int btn[3] = {53, 51, 49};
 int hour, minute, second;
-int mode = R_MODE;
+int mode;
 int counter;
 int status;
-extern volatile unsigned long timer0_millis;
 int flag_longclick_btn1;
 int flag_settingSchedule;
-
+int flag_duringLongPress;
 LiquidCrystal_I2C lcd(0x20,16,2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
 // Display the remaining food on the LCD. 
 void displayRemainingFood_LCD() {
@@ -62,6 +63,7 @@ void displayTimeSchedule_LCD(int hour, int minute, int second) {
     lcd.backlight();                // Turn on background light
     lcd.setCursor(2,0);
     if (flag_settingSchedule) {
+        lcd.setCursor(4,0);
         switch(status) {
             case H_MODE:
                  lcd.print("SET HOUR");
@@ -141,12 +143,19 @@ void setup()
     hour = 0, minute = 0, second = 0;
     flag_longclick_btn1 = 0;
     flag_settingSchedule = 0;
+    flag_duringLongPress = 0;
+    status = H_MODE;
+    mode = R_MODE;
     startMillis = millis();  // Initial start time
-    status = INIT_MODE;
+    button1.attachClick(click1);
+    button1.attachDuringLongPress(duringLongPress);
+    button1.attachLongPressStop(stopLongPress);
+    button1.setPressTicks(1000);
 }
 
 void loop()
 {
+  button1.tick();
   currentMillis = millis();  //get the current "time" (actually the number of milliseconds since the program started)
   // Turn off LCD after 15s if nothing changes
   if (currentMillis - startMillis >= TIME_NOTHING_CHANGES) {
@@ -172,55 +181,67 @@ void loop()
   }
   // Setup schedule with button 2
   // If you hold the button for at least 1 seconds, then set for an hour/minute/second depending on the current state.
-  if (isHoldingMoreThan1s) {
-    switch (status) {
-      case INIT_MODE:
-          status = H_MODE;
-          break;
-      case H_MODE:
-          status = M_MODE;
-          break;
-      case M_MODE:
-          status = S_MODE;
-          break;
-      case S_MODE:
-          status = H_MODE;
-          break;
-      default:
-          status = 0;     
-    }
-  }
+  
   if (digitalRead(btn[1]) == IS_PRESSED) {
-          flag_settingSchedule = 1;
-            switch(status) {
-              case H_MODE:
-                   if (digitalRead(btn[1]) == IS_PRESSED) {
-                       displayTimeSchedule_LCD(hour, minute, second);
-                       if (hour >= 24) hour = 0;
-                       else hour++;
-                   } 
-                   break;
-              case M_MODE:
-                   if (digitalRead(btn[1]) == IS_PRESSED) {
-                       displayTimeSchedule_LCD(hour, minute, second);
-                       if (minute >= 60) minute = 0;
-                       else minute++;
-                   }
-                   break;
-              case S_MODE:
-                  if (digitalRead(btn[1]) == IS_PRESSED) {
-                       displayTimeSchedule_LCD(hour, minute, second);
-                       if (second >= 60) second = 0;
-                       else second++;
-                  }
-                  status = H_MODE;
-                  break;
-          }
+      flag_settingSchedule = 1;
   }
   // Setup max food per day, with a max initial value of 0. To increase the 200, press once.
   if (digitalRead(btn[2]) == IS_PRESSED) {
       flag_settingSchedule = 0;
       if (MAX_FOOD_PER_DAY < 1600) setMaxFood();
       else Exceeding();
+  }
+}
+
+void duringLongPress() {
+     flag_duringLongPress = 1;   
+}
+
+void stopLongPress() {
+      flag_duringLongPress = 0;
+      switch (status) {
+          case INIT_MODE:
+              status = H_MODE;
+              displayTimeSchedule_LCD(hour, minute, second);
+              break;
+          case H_MODE:
+              status = M_MODE;
+              displayTimeSchedule_LCD(hour, minute, second);
+              break;
+          case M_MODE:
+              status = S_MODE;
+              displayTimeSchedule_LCD(hour, minute, second);
+              break;
+          case S_MODE:
+              status = H_MODE;
+              break;
+          default:
+              status = 0;     
+      }
+}
+void click1() {
+  if (!flag_duringLongPress) {
+      switch(status) {
+        case H_MODE:
+                 
+                 if (hour >= 24) hour = 0;
+                 else hour++;
+                 displayTimeSchedule_LCD(hour, minute, second);
+             break;
+        case M_MODE: 
+                 
+                 if (minute >= 60) minute = 0;
+                 else minute++;
+                 displayTimeSchedule_LCD(hour, minute, second);
+                 
+             break;
+        case S_MODE:
+                 
+                 if (second >= 60) second = 0;
+                 else second++;
+                 displayTimeSchedule_LCD(hour, minute, second);
+                 
+            break;
+      }
   }
 }
