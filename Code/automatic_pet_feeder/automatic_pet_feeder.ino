@@ -1,38 +1,64 @@
-// AUTOMATIC PET FEEDER
-// HOW TO USE?
-// Button0: Press once to switch between food remains and time to feed information.
-// Button1: Setup time to feed your pet.
-// Button2: Set the maximum amount of food to feed per day (it can only be set to 1600g). 
+//YWROBOT
+//Compatible with the Arduino IDE 1.0
+//Library version:1.1
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
-#include <OneButton.h>
+
+#include <Servo.h>
+Servo motor;
+
+#include <DS3231.h> 
+DS3231  rtc(SDA, SCL);
+Time  t;
+
+#include "HX711.h"
+HX711 current_food;
+HX711 amount_of_remaining_food;
 
 #define IS_PRESSED  HIGH
 #define R_MODE      1     // display remaining food on LCD
 #define T_MODE      2     // display time to feed on LCD
-#define INIT_MODE   4
 #define H_MODE      5     // Set schedule for hour
 #define M_MODE      6     // Set schedule for minute
 #define S_MODE      7     // Set schedule for second
-#define TIME_NOTHING_CHANGES  10000
 
-OneButton button1(51, LOW);
-// Declared for calculate time
-unsigned long startMillis;  // Some global variables available anywhere in the program
-unsigned long currentMillis; // Current time since the program started 
+int MAX_FOOD_PER_DAY = 0;
+int remaining_food = 0;
+int btn[2] = {53, 51};
+int hour = 0, minute = 0, second = 0;
+int mode = R_MODE;
+int counter = 0;
+int status = H_MODE;
+extern volatile unsigned long timer0_millis;
 
-int MAX_FOOD_PER_DAY;
-int remaining_food;
-int btn[3] = {53, 51, 49};
-int hour, minute, second;
-int mode;
-int counter;
-int status;
-int flag_longclick_btn1;
-int flag_settingSchedule;
-int flag_duringLongPress;
+int motor_pin = 47;
+int sensor_touch = 52;
+int set_interval = 49;
+int set_food = 48;
+int speaker = 45;
+int check_remaining_food = 44;
+// int amount_of_remaining_food = A0;
+// HX711 circuit wiring
+int CURRFOOD_DOUT_PIN = 43;
+int CURRFOOD_SCK_PIN = 42;
+int REMAINFOOD_DOUT_PIN = 41;
+int REMAINFOOD_SCK_PIN = 40;
+
+int setting_food = 0;
+int stop_rotate = 90;
+int start_rotate = 90;
+bool feed_active = false;
+int max_food = 0;
+int amout_of_food = 0;
+// bool state_touch = true;
+int last_feed = 6;
+int next_feed = 14;
+int interval = 8;
+int hour_sys, minute_sys, second_sys;
+
+
 LiquidCrystal_I2C lcd(0x20,16,2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
-// Display the remaining food on the LCD. 
+
 void displayRemainingFood_LCD() {
     lcd.init();                      // initialize the lcd 
     // Print a message to the LCD.
@@ -52,9 +78,8 @@ void displayRemainingFood_LCD() {
     lcd.setCursor(current_cursor, 1);
     lcd.print(remaining_food);
     lcd.setCursor(current_cursor + count + 1, 1);
-    lcd.print("G");
+    lcd.print("KG");
 }
-// Display feed time on LCD 
 void displayTimeSchedule_LCD(int hour, int minute, int second) {
     int current_cursor = 0;
     lcd.init();                      // initialize the lcd 
@@ -62,24 +87,7 @@ void displayTimeSchedule_LCD(int hour, int minute, int second) {
     lcd.clear();                    // Clear screen
     lcd.backlight();                // Turn on background light
     lcd.setCursor(2,0);
-    if (flag_settingSchedule) {
-        lcd.setCursor(4,0);
-        switch(status) {
-            case H_MODE:
-                 lcd.print("SET HOUR");
-                 break;
-            case M_MODE:
-                 lcd.print("SET MINUTE");
-                 break;
-            case S_MODE:
-                 lcd.print("SET SECOND");
-                 break;  
-            default:
-                 lcd.print("TIME TO FEED");
-                 break; 
-        }  
-    }
-    else lcd.print("TIME TO FEED");
+    lcd.print("TIME TO FEED");
     // Display hour
     current_cursor = 5;
     lcd.setCursor(current_cursor, 1);       
@@ -105,67 +113,122 @@ void displayTimeSchedule_LCD(int hour, int minute, int second) {
     lcd.setCursor(++current_cursor, 1);
     lcd.print(second);
 }
-// Set max food per day
-void setMaxFood() {
-  lcd.init();
-  lcd.setCursor(0, 0);
-  lcd.print("MAX FOOD PER DAY");
-  lcd.setCursor(6,1);
-  MAX_FOOD_PER_DAY += 200;
-  lcd.print(MAX_FOOD_PER_DAY);
-}
-// Check if the button is holding more than 1s
-bool isHoldingMoreThan1s(int button) {
-  while (digitalRead(button) == HIGH) {
-    counter++;
-    if (counter >= 1000) {
-      counter = 0;
-      return true;
-    }
-  }
-  return false;
-}
-// Don't allow the user to set more food per day (reach max).
-void Exceeding() {
-  lcd.init();
-  lcd.clear();
-  lcd.setCursor(1, 0);
-  lcd.print("CAN'T SET MORE");
-}
 
 void setup()
 {
+    motor.attach(motor_pin);
+    motor.write(stop_rotate);
+    pinMode(sensor_touch, INPUT);
+    pinMode(set_interval, INPUT);
+    pinMode(set_food, INPUT);
+    pinMode(check_remaining_food, INPUT);        
+    pinMode(speaker, OUTPUT);
+    digitalWrite(speaker, LOW);
+    rtc.begin();
+    current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
+    current_food.set_scale(-459.542);
+    current_food.tare();               // reset the scale to 0
+    amount_of_remaining_food.begin(REMAINFOOD_DOUT_PIN, REMAINFOOD_SCK_PIN);
+    amount_of_remaining_food.set_scale(-459.542);
+    amount_of_remaining_food.tare();    
+    max_food = 500;    
+    amout_of_food = 100;
+      
     Serial.begin(115200);
     pinMode(btn[0], INPUT);
     pinMode(btn[1], INPUT);
-    remaining_food = 0;
-    MAX_FOOD_PER_DAY = 0;
-    hour = 0, minute = 0, second = 0;
-    flag_longclick_btn1 = 0;
-    flag_settingSchedule = 0;
-    flag_duringLongPress = 0;
-    status = H_MODE;
-    mode = R_MODE;
-    startMillis = millis();  // Initial start time
-    button1.attachClick(click1);
-    button1.attachDuringLongPress(duringLongPress);
-    button1.attachLongPressStop(stopLongPress);
-    button1.setPressTicks(1000);
+    MAX_FOOD_PER_DAY = 1000;
+    remaining_food = 100;
+}
+
+bool CheckButtonIsHoldMoreThan1s(int button) {
+     if (digitalRead(button) == HIGH) counter++;
+     if (counter >= 1000) {
+        counter = 0;
+        return true;
+     }
+     return false;
+}
+
+// rotate when food_current < food set up
+void rotateMotor(){
+  if(feed_active){    
+    while(analogRead(current_food.read()) < setting_food){
+      motor.write(start_rotate);
+    }
+    motor.write(stop_rotate);
+    feed_active = false;
+  }
 }
 
 void loop()
 {
-  button1.tick();
-  currentMillis = millis();  //get the current "time" (actually the number of milliseconds since the program started)
-  // Turn off LCD after 15s if nothing changes
-  if (currentMillis - startMillis >= TIME_NOTHING_CHANGES) {
-      lcd.noBacklight();
-      lcd.noDisplay();
+  t = rtc.getTime();
+  hour_sys = t.hour;
+  minute_sys = t.min;
+  second_sys = t.sec;
+
+  // // push food follow setted time
+  // if(hour_sys == hour && minute_sys == minute && second_sys == second){           
+  //   feed_active = true;
+  //   last_feed = hour;
+  //   analogWrite(speaker, 150);
+  //   delay(200);
+  //   digitalWrite(speaker, LOW);
+  // }
+  
+  // push food after a interval time 
+  if(hour_sys == next_feed){                
+    feed_active = true;
+    last_feed = hour_sys;
+    next_feed = hour_sys + interval;         
+    if(next_feed >= 23){                 
+      next_feed = next_feed - 24;   
+    }     
+    analogWrite(speaker, 150);
+    delay(200);
+    digitalWrite(speaker, LOW);
   }
-  if ((digitalRead(btn[0]) || digitalRead(btn[1]) || digitalRead(btn[2])) == IS_PRESSED) startMillis = millis();
-  // Switching text if button 0 is pressed
+
+  // press sensor touch
+  if(digitalRead(sensor_touch)){
+    feed_active = true;
+  }
+
+  // set interval time
+  if(digitalRead(set_interval) == IS_PRESSED){
+    interval++;
+    if(interval > 23){
+      interval = 1;
+    }
+  }
+  
+  // set up amount of food will be pushed
+  if(digitalRead(set_food) == IS_PRESSED){
+    setting_food += amout_of_food;
+    if(setting_food > max_food){
+      setting_food = amout_of_food;
+    }
+  }
+
+  // print remaining food
+  if(digitalRead(check_remaining_food) == IS_PRESSED){
+    Serial.println(amount_of_remaining_food.get_units(), 1); 
+  }  
+  
+  // int food_remain = analogRead(A0);
+  // int setting_food = analogRead(A1);
+  rotateMotor();  
+  
+  long int timer0_millis = millis();  
+  // Turn off LCD after 15s if nothing changes
+  if (timer0_millis >= 15000) {
+      lcd.noDisplay(); 
+  }
+  
+  if (digitalRead(btn[0]) || digitalRead(btn[1]) == IS_PRESSED) timer0_millis = 0;
+  // Switching text if button 1 is pressed
   if (digitalRead(btn[0]) == IS_PRESSED) {
-    flag_settingSchedule = 0;
     switch(mode) {
     case R_MODE: 
         displayRemainingFood_LCD();
@@ -180,68 +243,54 @@ void loop()
     }
   }
   // Setup schedule with button 2
-  // If you hold the button for at least 1 seconds, then set for an hour/minute/second depending on the current state.
-  
   if (digitalRead(btn[1]) == IS_PRESSED) {
-      flag_settingSchedule = 1;
-  }
-  // Setup max food per day, with a max initial value of 0. To increase the 200, press once.
-  if (digitalRead(btn[2]) == IS_PRESSED) {
-      flag_settingSchedule = 0;
-      if (MAX_FOOD_PER_DAY < 1600) setMaxFood();
-      else Exceeding();
-  }
-}
-
-void duringLongPress() {
-     flag_duringLongPress = 1;   
-}
-
-void stopLongPress() {
-      flag_duringLongPress = 0;
-      switch (status) {
-          case INIT_MODE:
-              status = H_MODE;
-              displayTimeSchedule_LCD(hour, minute, second);
-              break;
+      counter++;
+      // If you hold the button for at least 2 seconds, then set for an hour/minute/second depending on the current state.
+      if (counter >= 1000) {
+        counter = 0;
+        switch(status) {
           case H_MODE:
-              status = M_MODE;
-              displayTimeSchedule_LCD(hour, minute, second);
-              break;
+               while (!CheckButtonIsHoldMoreThan1s(btn[1])) {
+                   displayTimeSchedule_LCD(hour, minute, second);
+                   if (hour >= 24) hour = 0;
+                   else hour++;
+                   status = M_MODE;
+               }
+               break;
           case M_MODE:
-              status = S_MODE;
-              displayTimeSchedule_LCD(hour, minute, second);
-              break;
+               while (!CheckButtonIsHoldMoreThan1s(btn[1])) {
+                   displayTimeSchedule_LCD(hour, minute, second);
+                   if (minute >= 60) minute = 0;
+                   else minute++;
+                   status = S_MODE;
+               }
+               break;
           case S_MODE:
-              status = H_MODE;
-              break;
-          default:
-              status = 0;     
+               while (!CheckButtonIsHoldMoreThan1s(btn[1])) {
+                   displayTimeSchedule_LCD(hour, minute, second);
+                   if (second >= 60) second = 0;
+                   else second++;
+                   status = H_MODE;
+               }
+               break;
+        }
       }
-}
-void click1() {
-  if (!flag_duringLongPress) {
       switch(status) {
-        case H_MODE:
-                 
-                 if (hour >= 24) hour = 0;
-                 else hour++;
-                 displayTimeSchedule_LCD(hour, minute, second);
-             break;
-        case M_MODE: 
-                 
-                 if (minute >= 60) minute = 0;
-                 else minute++;
-                 displayTimeSchedule_LCD(hour, minute, second);
-                 
-             break;
-        case S_MODE:
-                 
-                 if (second >= 60) second = 0;
-                 else second++;
-                 displayTimeSchedule_LCD(hour, minute, second);
-                 
-            break;
-      }
+          case H_MODE:
+               displayTimeSchedule_LCD(hour, minute, second);
+               if (hour >= 24) hour = 0;
+               else hour++;
+               break;
+          case M_MODE:
+               displayTimeSchedule_LCD(hour, minute, second);
+               if (minute >= 60) minute = 0;
+               else minute++;
+               break;
+          case S_MODE:
+               displayTimeSchedule_LCD(hour, minute, second);
+               if (second >= 60) second = 0;
+               else second++;
+               break;
+        }
   }
 }
