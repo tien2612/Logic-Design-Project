@@ -11,21 +11,24 @@
 #define IS_PRESSED  HIGH
 #define RP_MODE      1      // display remaining food in the plate on LCD
 #define RC_MODE      2      // display remaining food in the container on LCD
-#define T_MODE       3      // display time to feed on LCD
-#define INIT_MODE    4
-#define H_MODE       5      // Set schedule for hour0
-#define M_MODE       6      // Set schedule for minute0
-#define S_MODE       7      // Set schedule for second0
-#define H1_MODE      8      // Set schedule for hour1
-#define M1_MODE      9      // Set schedule for minute1
-#define S1_MODE      10     // Set schedule for second1
-#define H2_MODE      11     // Set schedule for hour2
-#define M2_MODE      12     // Set schedule for minute2
-#define S2_MODE      13     // Set schedule for second2
+#define T0_MODE      3      // display time to feed on LCD
+#define T1_MODE      4      // display time to feed on LCD
+#define T2_MODE      5      // display time to feed on LCD
+
+#define INIT_MODE    10
+#define H_MODE       11      // Set schedule for hour0
+#define M_MODE       12      // Set schedule for minute0
+#define S_MODE       13      // Set schedule for second0
+#define H1_MODE      14      // Set schedule for hour1
+#define M1_MODE      15      // Set schedule for minute1
+#define S1_MODE      16     // Set schedule for second1
+#define H2_MODE      17     // Set schedule for hour2
+#define M2_MODE      18     // Set schedule for minute2
+#define S2_MODE      19     // Set schedule for second2
 #define TIME_NOTHING_CHANGES  10000 // If nothing changes after 10s, then turn off LCD to save power
 
 // Declare for any var about time here.
-unsigned long startMillis;  // Some global variables available anywhere in the program
+unsigned long startMillis;    // Some global variables available anywhere in the program
 unsigned long currentMillis; // Current time since the program started 
 int hour[3], minute[3], second[3];
 // Declare for any flag here.
@@ -33,6 +36,9 @@ bool flag_longclick_btn1;
 bool flag_settingSchedule;
 bool flag_duringLongPress;
 bool flag_settingMaxFood;
+bool flag_sch0_active;         // If flag = 1 then feed the animal according to the time0 and vice versa.
+bool flag_sch1_active;         // If flag = 1 then feed the animal according to the time1 and vice versa.
+bool flag_sch2_active;         // If flag = 1 then feed the animal according to the time2 and vice versa.
 // Declare for the button or something else. 
 OneButton button1(51, LOW);
 OneButton button2(49, LOW);
@@ -41,9 +47,9 @@ int btn[4] = {53, 51, 49, 47};
 int MAX_FOOD_PER_DAY;
 int remaining_food;
 int remainingFoodInContainer;
-int mode;
-int counter;
-int status;
+int mode;                      // State to display on LCD (for button0).
+int counter;                   // Variable for calculating the total number of digits.
+int status;                    // State to setup schedule (for button1).
 
 LiquidCrystal_I2C lcd(0x20,16,2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
 // Display the remaining food on the LCD. 
@@ -88,7 +94,7 @@ void displayTimeSchedule_LCD(int hour, int minute, int second) {
     // Print a message to the LCD.
     lcd.clear();                    // Clear screen
     lcd.backlight();                // Turn on background light
-    lcd.setCursor(2,0);
+    lcd.setCursor(0,0);
     if (flag_settingSchedule) {
         lcd.setCursor(3,0);
         switch(status) {
@@ -123,8 +129,33 @@ void displayTimeSchedule_LCD(int hour, int minute, int second) {
                  lcd.print("TIME TO FEED");
                  break; 
         }  
+    } else {
+          lcd.print("TIME");
+          lcd.setCursor(4, 0);
+          switch(mode) {
+            case T0_MODE:
+                lcd.print(0);
+                lcd.setCursor(5, 0);
+                if (flag_sch0_active) {
+                    lcd.print(" - ACTIVE");
+                } else lcd.print(" - INACTIVE");
+                break;
+            case T1_MODE:
+                lcd.print(1);
+                if (flag_sch1_active) {
+                    lcd.print(" - ACTIVE");
+                } else lcd.print(" - INACTIVE");
+                break;
+            case T2_MODE:
+                lcd.print(2);
+                if (flag_sch2_active) {
+                    lcd.print(" - ACTIVE");
+                } else lcd.print(" - INACTIVE");
+                break;
+            default:
+              break;              
+          }
     }
-    else lcd.print("TIME TO FEED");
     // Display hour
     current_cursor = 5;
     lcd.setCursor(current_cursor, 1);       
@@ -158,42 +189,7 @@ void displayMaxFood() {
     lcd.setCursor(6,1);
     lcd.print(MAX_FOOD_PER_DAY);
 }
-void IncreaseMaxFood() {
-    if (MAX_FOOD_PER_DAY >= 1600) {
-        Exceeding(); // Notify the user if the maximum amount of food to feed is exceeded.
-        return;
-    }
-    else MAX_FOOD_PER_DAY += 200;
-    displayMaxFood();
-}
-void DecreaseMaxFood() {
-  if (MAX_FOOD_PER_DAY <= 0) {
-      ReachMin(); //Notify the user if the maximum amount of food to feed is equal to zero. 
-      return;
-  }
-  else {
-    MAX_FOOD_PER_DAY -= 200;
-    displayMaxFood();
-  }
-  
-}
-// Don't allow the user to set more food per day (reach max).
-void Exceeding() {
-    lcd.init();
-    lcd.clear();
-    lcd.setCursor(1, 0);
-    lcd.print("CAN'T INCREASE");
-    lcd.setCursor(6, 1);
-    lcd.print("MORE");
-}
-// Don't allow the user to set less food per day (reach min).
-void ReachMin(){
-    lcd.clear();
-    lcd.setCursor(1, 0);
-    lcd.print("CAN'T DECREASE");
-    lcd.setCursor(6, 1);
-    lcd.print("MORE");
-}
+
 void setup()
 {
     Serial.begin(115200);
@@ -208,6 +204,9 @@ void setup()
     flag_settingSchedule = 0;
     flag_duringLongPress = 0;
     flag_settingMaxFood = 0;
+    flag_sch0_active = 0;
+    flag_sch1_active = 0;
+    flag_sch2_active = 0;
     status = H_MODE;
     mode = RC_MODE;
     
@@ -254,10 +253,18 @@ void loop()
         break;
     case RP_MODE: 
         displayRemainingFood_LCD(RP_MODE);
-        mode = T_MODE;
+        mode = T0_MODE;
         break;
-    case T_MODE: 
-        displayTimeSchedule_LCD(hour, second, minute);
+    case T0_MODE:
+        displayTimeSchedule_LCD(hour[0], second[0], minute[0]);
+        mode = T1_MODE;
+        break;
+    case T1_MODE:
+        displayTimeSchedule_LCD(hour[1], second[1], minute[1]);
+        mode = T2_MODE;
+        break;
+    case T2_MODE:
+        displayTimeSchedule_LCD(hour[2], second[2], minute[2]);
         mode = RC_MODE;
         break;
     default:
@@ -276,9 +283,9 @@ void loop()
       flag_settingSchedule = 0;
       flag_settingMaxFood = 1;
   }
-  delay(1);
 }
 
+//*** Function for button1 ***//
 void duringLongPress() {
      flag_duringLongPress = 1;   
 }
@@ -330,6 +337,7 @@ void stopLongPress() {
                  break;
       }
 }
+
 void click1() {
   if (!flag_duringLongPress) {
       switch(status) {
@@ -388,4 +396,42 @@ void click1() {
                  break;
       }
   }
+}
+
+//*** Function for button2 ***//
+void IncreaseMaxFood() {
+    if (MAX_FOOD_PER_DAY >= 1600) {
+        Exceeding(); // Notify the user if the maximum amount of food to feed is exceeded.
+        return;
+    }
+    else MAX_FOOD_PER_DAY += 200;
+    displayMaxFood();
+}
+void DecreaseMaxFood() {
+  if (MAX_FOOD_PER_DAY <= 0) {
+      ReachMin(); //Notify the user if the maximum amount of food to feed is equal to zero. 
+      return;
+  }
+  else {
+    MAX_FOOD_PER_DAY -= 200;
+    displayMaxFood();
+  }
+  
+}
+// Don't allow the user to set more food per day (reach max).
+void Exceeding() {
+    lcd.init();
+    lcd.clear();
+    lcd.setCursor(1, 0);
+    lcd.print("CAN'T INCREASE");
+    lcd.setCursor(6, 1);
+    lcd.print("MORE");
+}
+// Don't allow the user to set less food per day (reach min).
+void ReachMin(){
+    lcd.clear();
+    lcd.setCursor(1, 0);
+    lcd.print("CAN'T DECREASE");
+    lcd.setCursor(6, 1);
+    lcd.print("MORE");
 }
