@@ -3,7 +3,8 @@
 // Button0: Press once to switch between food remains and food in container and time to feed information.
 // Button1: Setup time to feed your pet. Hold the button to switch between states (hour->minute->second->hour1->,..->hour->minute->,..). It depends on your current state.
 // Button2: Set the maximum amount of food to feed per day (it can only be set to 1600g). Press once to increase 200 and hold the button to decrease the value by 200.
-// Button3: Reset all settings. If you press once, a notification will be shown to confirm; if you press again, settings will be reset.
+// Button3: Set the food is released each time (it can only be set to 1600g). Press once to increase 10 and hold the button to decrease the value by 10.
+// Button4: Reset all settings. If you press once, a notification will be shown to confirm; if you press again, settings will be reset.
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
 #include <OneButton.h>
@@ -32,6 +33,10 @@
 #define MAX_FOOD     1600                     // Per day food allowance.
 #define MIN_FOOD     0
 
+
+// TOUCH
+#define TOUCH_SENSOR 41
+#define TOUCH_OUT    37
 // Declare for any var about time here.
 unsigned long startMillis;    // Some global variables available anywhere in the program
 unsigned long currentMillis; // Current time since the program started 
@@ -232,6 +237,8 @@ void setup()
     pinMode(btn[1], INPUT);
     pinMode(btn[2], INPUT);
     pinMode(btn[3], INPUT);
+    pinMode(TOUCH_SENSOR, INPUT);
+    pinMode(TOUCH_OUT, OUTPUT);
     remaining_food = 0;
     MAX_FOOD_PER_DAY = 1000;
     foodReleasedEachTime = 150;
@@ -270,6 +277,8 @@ void setup()
 
 void loop()
 {
+  if (digitalRead(TOUCH_SENSOR) == IS_PRESSED) digitalWrite(TOUCH_OUT, HIGH);
+  else digitalWrite(TOUCH_OUT, LOW);
   button1.tick();
   button2.tick();
   button3.tick();
@@ -280,7 +289,7 @@ void loop()
       lcd.noBacklight();
       lcd.noDisplay();
   }
-  if ((digitalRead(btn[0]) || digitalRead(btn[1]) || digitalRead(btn[2])) == IS_PRESSED) startMillis = millis();
+  if ((digitalRead(btn[0]) || digitalRead(btn[1]) || digitalRead(btn[2]) || digitalRead(btn[3])) == IS_PRESSED) startMillis = millis();
   // Switching text if button 0 is pressed
   if (digitalRead(btn[0]) == IS_PRESSED) {
     FIRST_PRESS_BUTTON1 = 1;
@@ -563,6 +572,7 @@ void clearSettings() {
     } 
     else {
         MAX_FOOD_PER_DAY = 0;
+        foodReleasedEachTime = 0;
         setZero(hour); setZero(minute); setZero(second);
         lcd.init();
         lcd.clear();
