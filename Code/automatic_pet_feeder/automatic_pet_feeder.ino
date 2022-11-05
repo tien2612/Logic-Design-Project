@@ -8,6 +8,13 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
 #include <OneButton.h>
+#include "Key.h"
+#include <Keypad_I2C.h>
+#include <Keypad.h>        // GDY120705
+#include <Wire.h>
+
+#define I2CADDR 0x21
+#define LCDADDR 0x27
 
 #define IS_PRESSED  HIGH
 #define RP_MODE      1                        // State of remaining food in the plate state
@@ -19,28 +26,43 @@
 #define T1_MODE      6                        // State of time1 to feed
 #define T2_MODE      7                        // State of time2 to feed
 
-#define INIT_MODE    10
-#define H_MODE       11                       // Set schedule for hour0
-#define M_MODE       12                       // Set schedule for minute0
-#define S_MODE       13                       // Set schedule for second0
-#define H1_MODE      14                       // Set schedule for hour1
-#define M1_MODE      15                       // Set schedule for minute1
-#define S1_MODE      16                       // Set schedule for second1
-#define H2_MODE      17                       // Set schedule for hour2
-#define M2_MODE      18                       // Set schedule for minute2
-#define S2_MODE      19                       // Set schedule for second2
-#define TIME_NOTHING_CHANGES  10000           // If nothing changes after 10s, then turn off LCD to save power
-#define MAX_FOOD     1600                     // Per day food allowance.
-#define MIN_FOOD     0
+#define INIT_MODE            10
+#define SCHEDULE0_MODE       11                       // Set schedule for hour0
+#define SCHEDULE1_MODE       12                       // Set schedule for minute0
+#define SCHEDULE2_MODE       13                       // Set schedule for second0
 
+#define TIME_NOTHING_CHANGES  20000           // If nothing changes after 20S, then turn off LCD to save power
+#define MAX_FOOD              1600                     // Per day food allowance.
+#define MIN_FOOD              0
+
+#define INFOR_MENU                30
+#define SET_SCHEDULE_MENU         31
+#define SET_RELEASED_FOOD_MENU    32
+#define SET_MAX_FOOD_MENU         33
+#define RESET_MENU                34
 
 // TOUCH
 #define TOUCH_SENSOR 41
 #define TOUCH_OUT    37
+
+
+const byte ROWS = 4; //four rows
+const byte COLS = 4; //three columns
+char keys[ROWS][COLS] = {
+	{'1','2','3','A'},
+	{'4','5','6','B'},
+	{'7','8','9','C'},
+	{'*','0','#','D'}
+	};
+byte rowPins[ROWS] = {0, 1, 2, 3}; //connect to the row pinouts of the keypad
+byte colPins[COLS] = {4, 5, 6, 7}; //connect to the column pinouts of the keypad
+	
+Keypad_I2C keypad = Keypad_I2C( makeKeymap(keys), rowPins, colPins, ROWS, COLS, I2CADDR);
+
 // Declare for any var about time here.
 unsigned long startMillis;    // Some global variables available anywhere in the program
 unsigned long currentMillis; // Current time since the program started 
-int hour[3], minute[3], second[3];
+char setSchedule0[6], setSchedule1[6], setSchedule2[6] = {0};
 
 // Declare for any flag here.
 bool flag_longclick_btn1;
@@ -55,25 +77,65 @@ bool FIRST_PRESS_BUTTON1;
 bool FIRST_PRESS_BUTTON2;
 bool FIRST_PRESS_BUTTON3;
 bool FIRST_PRESS_RESET;
-
+bool flag_confirm = false;
 // Declare for the button or something else. 
-OneButton button1(51, LOW);
-OneButton button2(49, LOW);
-OneButton button3(47, LOW);
-OneButton button4(45, LOW);
-int btn[4] = {53, 51, 49, 47};
-int mode;                      // State to display on LCD (for button0).
+
+int btn[4] = {7, 10, 11, 12};
+int mode = RC_MODE;                      // State to display on LCD (for button0).
 int counter;                   // Variable for calculating the total number of digits.
-int status;                    // State to setup schedule (for button1).
-int mode_btn2;                 // State to setup max food or released food on button2.
-
+int status = SCHEDULE0_MODE;                   
+int menu = 1;
 // Declare about food here
-int MAX_FOOD_PER_DAY;          // Default = 1000g
-int remaining_food;
+int remaining_food = 0;
+int MAX_FOOD_PER_DAY = 1000;
+int foodReleasedEachTime = 150;
 int remainingFoodInContainer;
-int foodReleasedEachTime;      // Default = 150g
 
-LiquidCrystal_I2C lcd(0x20,16,2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
+LiquidCrystal_I2C lcd(LCDADDR,16,2);  // set the LCD address to 0x20 for a 16 chars and 2 line display
+
+void updateMenu() {
+  switch (menu) {
+    case 0:
+      menu = 1;
+      break;
+    case 1:
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print(">All Information");
+      lcd.setCursor(0, 1);
+      lcd.print("Set Schedule");
+      break;
+    case 2:
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("All Information");
+      lcd.setCursor(0, 1);
+      lcd.print(">Set Schedule");
+      break;
+    case 3:
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print(">Food is released");
+      lcd.setCursor(0, 1);
+      lcd.print("Set max food");
+      break;
+    case 4:
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("Food is released");
+      lcd.setCursor(0, 1);
+      lcd.print(">Set max food");
+      break;
+    case 5:
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print(">Reset settings");
+      break;
+    case 6:
+      menu = 5;
+      break;
+  }
+}
 int calDigitofNumber(int number) {
     int count = 0;
     int temp = number;
@@ -114,7 +176,7 @@ void displayRemainingFood_LCD(int status) {
     }
 }
 // Display feed time on LCD 
-void displayTimeSchedule_LCD(int hour, int minute, int second) {
+void displayTimeSchedule_LCD(char setSchedule[6]) {
     int current_cursor = 0;
     lcd.init();                      // initialize the lcd 
     // Print a message to the LCD.
@@ -122,35 +184,17 @@ void displayTimeSchedule_LCD(int hour, int minute, int second) {
     lcd.backlight();                // Turn on background light
     lcd.setCursor(0,0);
     if (flag_settingSchedule) {
-        lcd.setCursor(3,0);
+        lcd.setCursor(1,0);
         switch(status) {
-            case H_MODE:
-                 lcd.print("SET HOUR_0");
+            case SCHEDULE0_MODE:
+                 lcd.print("SET SCHEDULE0");
                  break;
-            case M_MODE:
-                 lcd.print("SET MINUTE_0");
+            case SCHEDULE1_MODE:
+                 lcd.print("SET SCHEDULE1");
                  break;
-            case S_MODE:
-                 lcd.print("SET SECOND_0");
-                 break;
-            case H1_MODE:
-                 lcd.print("SET HOUR_1");
-                 break;
-            case M1_MODE:
-                 lcd.print("SET MINUTE_1");
-                 break;
-            case S1_MODE:
-                 lcd.print("SET SECOND_1");
-                 break;  
-            case H2_MODE:
-                 lcd.print("SET HOUR_2");
-                 break;
-            case M2_MODE:
-                 lcd.print("SET MINUTE_2");
-                 break;
-            case S2_MODE:
-                 lcd.print("SET SECOND_2");
-                 break;    
+            case SCHEDULE2_MODE:
+                 lcd.print("SET SCHEDULE2");
+                 break;   
             default:
                  lcd.print("TIME TO FEED");
                  break; 
@@ -183,29 +227,24 @@ void displayTimeSchedule_LCD(int hour, int minute, int second) {
           }
     }
     // Display hour
-    current_cursor = 5;
-    lcd.setCursor(current_cursor, 1);       
-    lcd.print(hour);
-    if (hour < 10) current_cursor++;
-    else current_cursor = current_cursor + 2;
-    lcd.setCursor(current_cursor, 1);
+    lcd.setCursor(4, 1);       
+    lcd.print(setSchedule[0]);
+    lcd.setCursor(5, 1);    
+    lcd.print(setSchedule[1]);
+    lcd.setCursor(6, 1); 
     lcd.print(":");
     // Display minute
-    if (minute < 10) {
-        lcd.setCursor(++current_cursor, 1);
-        lcd.print(0);
-    }
-    lcd.setCursor(++current_cursor, 1);
-    lcd.print(minute);
-    lcd.setCursor(++current_cursor, 1);
+    lcd.setCursor(7, 1);       
+    lcd.print(setSchedule[2]);
+    lcd.setCursor(8, 1);    
+    lcd.print(setSchedule[3]);
+    lcd.setCursor(9, 1); 
     lcd.print(":");
     // Display second
-    if (second < 10) {
-        lcd.setCursor(++current_cursor, 1);
-        lcd.print(0);
-    }
-    lcd.setCursor(++current_cursor, 1);
-    lcd.print(second);
+    lcd.setCursor(10, 1);       
+    lcd.print(setSchedule[4]);
+    lcd.setCursor(11, 1);    
+    lcd.print(setSchedule[5]);
 }
 // Set max food per day
 void displayMaxFood() {
@@ -230,323 +269,93 @@ void displayFoodReleased() {
     lcd.print("G");
 }
 
+int index_schedule_keypad = 0;
+
 void setup()
 {
-    Serial.begin(115200);
-    pinMode(btn[0], INPUT);
-    pinMode(btn[1], INPUT);
-    pinMode(btn[2], INPUT);
-    pinMode(btn[3], INPUT);
-    pinMode(TOUCH_SENSOR, INPUT);
-    pinMode(TOUCH_OUT, OUTPUT);
-    remaining_food = 0;
-    MAX_FOOD_PER_DAY = 1000;
-    foodReleasedEachTime = 150;
-    hour[3] = {0}, minute[3] = {0}, second[3] = {0};
-    flag_longclick_btn1 = 0;
-    flag_settingSchedule = 0;
-    flag_duringLongPress = 0;
-    flag_settingMaxFood = 0;
+    lcd.home();
+    lcd.init();
+    lcd.backlight();
+    Serial.begin(9600);
+    keypad.begin(makeKeymap(keys));
+    Wire.begin();
+    pinMode(btn[0], INPUT_PULLUP);
+    pinMode(btn[1], INPUT_PULLUP);
+    pinMode(btn[2], INPUT_PULLUP);
+    pinMode(btn[3], INPUT_PULLUP);
+
     flag_sch0_active = 0;
     flag_sch1_active = 0;
     flag_sch2_active = 0;
-    FIRST_PRESS_BUTTON1 = 1;
-    FIRST_PRESS_BUTTON2 = 1;
-    FIRST_PRESS_BUTTON3 = 1;
     FIRST_PRESS_RESET = 1; 
-    status = H_MODE;
-    mode = RC_MODE;
-    mode_btn2 = MF_MODE;
-    // Functions of button1.
-    button1.attachClick(click1);                     // Fires as soon as a single click of button1 is detected.
-    button1.attachDuringLongPress(duringLongPress);  // Fires periodically as long as the button1 is held down.
-    button1.attachLongPressStop(stopLongPress);      // Fires when the button1 is released after a long hold.
-    button1.setPressTicks(1000);                     // Set duration to hold a button1 to trigger a long press.
-    // Functions of button2.
-    button2.attachClick(IncreaseMaxFood);
-    button2.attachDuringLongPress(DecreaseMaxFood);
-    button1.setPressTicks(1000);
-    // Functions of button3.
-    button3.attachClick(IncreaseReleasedFood);
-    button3.attachDuringLongPress(DecreaseReleasedFood);
-    button3.setPressTicks(1000);
-    // Functions of button4.
-    button4.attachClick(clearSettings);
     startMillis = millis();                          // Initial start time.
+    updateMenu();
 }
 
 void loop()
 {
-  if (digitalRead(TOUCH_SENSOR) == IS_PRESSED) digitalWrite(TOUCH_OUT, HIGH);
-  else digitalWrite(TOUCH_OUT, LOW);
-  button1.tick();
-  button2.tick();
-  button3.tick();
-  button4.tick();
+  flag_confirm = false;
+  //Serial.print(menu);
   currentMillis = millis();  // Get the current "time" (actually the number of milliseconds since the program started)
   // Turn off LCD after 15s if nothing changes
   if (currentMillis - startMillis >= TIME_NOTHING_CHANGES) {
       lcd.noBacklight();
       lcd.noDisplay();
+  } else {
+    lcd.backlight();
+    lcd.display();
   }
-  if ((digitalRead(btn[0]) || digitalRead(btn[1]) || digitalRead(btn[2]) || digitalRead(btn[3])) == IS_PRESSED) startMillis = millis();
+  if ((!digitalRead(btn[0]) || !digitalRead(btn[1]) || !digitalRead(btn[2]) || !digitalRead(btn[3]))) startMillis = millis();
   // Switching text if button 0 is pressed
-  if (digitalRead(btn[0]) == IS_PRESSED) {
-    FIRST_PRESS_BUTTON1 = 1;
-    FIRST_PRESS_BUTTON2 = 1;
-    FIRST_PRESS_BUTTON3 = 1;
-    FIRST_PRESS_RESET = 1;
-    flag_settingSchedule = 0;
-    switch(mode) {
-    case RC_MODE: 
-        displayRemainingFood_LCD(RC_MODE);
-        mode = RP_MODE;
-        break;
-    case RP_MODE: 
-        displayRemainingFood_LCD(RP_MODE);
-        mode = RF_MODE;
-        break;
-    case RF_MODE:
-         displayFoodReleased();
-         mode = T0_MODE;
-         break;
-    case T0_MODE:
-        displayTimeSchedule_LCD(hour[0], second[0], minute[0]);
-        mode = T1_MODE;
-        break;
-    case T1_MODE:
-        displayTimeSchedule_LCD(hour[1], second[1], minute[1]);
-        mode = T2_MODE;
-        break;
-    case T2_MODE:
-        displayTimeSchedule_LCD(hour[2], second[2], minute[2]);
-        mode = RC_MODE;
-        break;
-    default:
-        lcd.clear();
-    }
+  if (!digitalRead(btn[2])){
+    flag_confirm = false;
+    if (menu >= 5) menu = 1;
+    else menu++;
+    updateMenu();
+   // delay(100);
+    while (!digitalRead(btn[2])) delay(100);;
   }
-  // Setup schedule with button 2
-  // If you hold the button for at least 1 seconds, then set for an hour/minute/second depending on the current state.
-  
-  if (digitalRead(btn[1]) == IS_PRESSED) {
-      flag_settingMaxFood = 0;
-      flag_settingSchedule = 1;
-      FIRST_PRESS_BUTTON2 = 1;
-      FIRST_PRESS_BUTTON3 = 1;
-      FIRST_PRESS_RESET = 1;
-  }
-  // Setup max food per day, with a max initial value of 0. To increase the 200, press once.
-  if (digitalRead(btn[2]) == IS_PRESSED) {
-      flag_settingSchedule = 0;
-      flag_settingMaxFood = 1;
-      FIRST_PRESS_BUTTON1 = 1;
-      FIRST_PRESS_BUTTON3 = 1;
-      FIRST_PRESS_RESET = 1;
-  }
-}
 
-//*** Function for button1 ***//
-void duringLongPress() {
-     flag_duringLongPress = 1;   
-}
-
-void stopLongPress() {
-      flag_duringLongPress = 0;
-      switch(status) {
-        case INIT_MODE:
-                 status = H_MODE;
-                 displayTimeSchedule_LCD(hour[0], minute[0], second[0]);
-                 break;      
-        case H_MODE:
-                 status = M_MODE;
-                 displayTimeSchedule_LCD(hour[0], minute[0], second[0]);
-                 break;
-        case M_MODE: 
-                 status = S_MODE;
-                 displayTimeSchedule_LCD(hour[0], minute[0], second[0]);
-                 break;
-        case S_MODE:
-                 status = H1_MODE;
-                 displayTimeSchedule_LCD(hour[0], minute[0], second[0]);
-                 break;
-        case H1_MODE:
-                 status = M1_MODE;
-                 displayTimeSchedule_LCD(hour[1], minute[1], second[1]);
-                 break;
-        case M1_MODE: 
-                 status = S1_MODE;
-                 displayTimeSchedule_LCD(hour[1], minute[1], second[1]);
-                  break;
-        case S1_MODE:
-                 status = H2_MODE;
-                 displayTimeSchedule_LCD(hour[1], minute[1], second[1]);
-                 break;
-        case H2_MODE:
-                 status = M2_MODE;
-                 displayTimeSchedule_LCD(hour[2], minute[2], second[2]);
-                 break;
-        case M2_MODE: 
-                 status = S2_MODE;
-                 displayTimeSchedule_LCD(hour[2], minute[2], second[2]);
-                 break;
-        case S2_MODE:
-                 status = H_MODE;
-                 displayTimeSchedule_LCD(hour[2], minute[2], second[2]);
-                 break;
-        default:
-                 break;
-      }
-}
-
-void click1() {
-  if (!flag_duringLongPress) {
-      switch(status) {
-        case H_MODE:
-                 if (!FIRST_PRESS_BUTTON1) {
-                     if (hour[0] >= 24) hour[0] = 0;
-                     else hour[0]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[0], minute[0], second[0]);
-                 break;
-        case M_MODE: 
-                 if (!FIRST_PRESS_BUTTON1) {
-                     if (minute[0] >= 60) minute[0] = 0;
-                     else minute[0]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[0], minute[0], second[0]);
-                 break;
-        case S_MODE:
-                 if (!FIRST_PRESS_BUTTON1) {
-                     if (second[0] >= 60) second[0] = 0;
-                     else second[0]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[0], minute[0], second[0]);
-                 break;
-        case H1_MODE:
-                 if (!FIRST_PRESS_BUTTON1) {
-                     if (hour[1] >= 24) hour[1] = 0;
-                     else hour[1]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[1], minute[1], second[1]);
-                 break;
-        case M1_MODE: 
-                 if (!FIRST_PRESS_BUTTON1) {
-                     if (minute[1] >= 60) minute[1] = 0;
-                     else minute[1]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[1], minute[1], second[1]);
-                  break;
-        case S1_MODE:
-                 if (!FIRST_PRESS_BUTTON1) {
-                     if (second[1] >= 60) second[1] = 0;
-                     else second[1]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[1], minute[1], second[1]);
-                 break;
-        case H2_MODE:
-                 if (!FIRST_PRESS_BUTTON1) {
-                     if (hour[2] >= 24) hour[2] = 0;
-                     else hour[2]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[2], minute[2], second[2]);
-                 break;
-        case M2_MODE:
-                 if (!FIRST_PRESS_BUTTON1) { 
-                     if (minute[2] >= 60) minute[2] = 0;
-                     else minute[2]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[2], minute[2], second[2]);
-                 break;
-        case S2_MODE:
-                 if (!FIRST_PRESS_BUTTON1) {
-                     if (second[2] >= 60) second[2] = 0;
-                     else second[2]++;
-                 } else FIRST_PRESS_BUTTON1 = 0;
-                 displayTimeSchedule_LCD(hour[2], minute[2], second[2]);
-                 break;
-        default:
-                 lcd.init();
-                 lcd.clear();
-                 lcd.setCursor(2, 0);
-                 lcd.print("CAN'T DETECT");
-                 lcd.setCursor(4, 1);
-                 lcd.print("A STATE");
-                 break;
-      }
-  }
-}
-
-//*** Function for button2 ***//
-
-// Set max food (increase or decrease) depends on the state of input.
-void IncreaseMaxFood() {
-    if (MAX_FOOD_PER_DAY >= MAX_FOOD) {
-        Exceeding(); // Notify the user if the maximum amount of food to feed is exceeded.
-        return;
-    }
-    else {
-        if (!FIRST_PRESS_BUTTON2) MAX_FOOD_PER_DAY += 200;
-        else FIRST_PRESS_BUTTON2 = 0;
-        displayMaxFood();
-    }
+  if (!digitalRead(btn[3])){
+              
+    flag_confirm = false;
+    if (menu <= 1) menu = 5;
+    else menu--;
+    updateMenu();
     
-}
-
-void DecreaseMaxFood() {
-  if (MAX_FOOD_PER_DAY <= MIN_FOOD) {
-      ReachMin(); //Notify the user if the maximum amount of food to feed is equal to zero. 
-      return;
+    while(!digitalRead(btn[3])) delay(100);;
   }
-  else {
-      if (!FIRST_PRESS_BUTTON2) MAX_FOOD_PER_DAY -= 200;
-      else FIRST_PRESS_BUTTON2 = 0;
-      displayMaxFood();
-  } 
-}
-// Don't allow the user to set more food per day (reach max).
-void Exceeding() {
-    lcd.init();
-    lcd.clear();
-    lcd.setCursor(1, 0);
-    lcd.print("CAN'T INCREASE");
-    lcd.setCursor(6, 1);
-    lcd.print("MORE");
-}
-// Don't allow the user to set less food per day (reach min).
-void ReachMin(){
-    lcd.clear();
-    lcd.setCursor(1, 0);
-    lcd.print("CAN'T DECREASE");
-    lcd.setCursor(6, 1);
-    lcd.print("MORE");
-}
 
-//*** Functions for button3 ***//
-void IncreaseReleasedFood() {
-    if (foodReleasedEachTime >= MAX_FOOD) {
-        Exceeding(); // Notify the user if the maximum amount of food to feed is exceeded.
-        return;
-    }
-    else {
-        if (!FIRST_PRESS_BUTTON3) foodReleasedEachTime += 10;
-        else FIRST_PRESS_BUTTON3 = 0;
-        displayFoodReleased();
-    }
+  if (!digitalRead(btn[0])){
+    flag_confirm = true;
     
+    if (flag_settingSchedule) {
+      
+        index_schedule_keypad = 0;
+        if (menu == 2) {
+            switch(status) {
+              case SCHEDULE0_MODE:
+                  status = SCHEDULE1_MODE;
+                  displayTimeSchedule_LCD(setSchedule1);
+                  break;
+              case SCHEDULE1_MODE:
+                  status = SCHEDULE2_MODE;
+                  displayTimeSchedule_LCD(setSchedule2);
+                  break;
+              default:
+                  break;
+            }
+      }
+    }
+    delay(100);
+    while (!digitalRead(btn[0]));
+  }
+
+  if (flag_confirm) {
+    executeAction(); // Confirm action.
+  }
 }
 
-void DecreaseReleasedFood() {
-  if (foodReleasedEachTime <= MIN_FOOD) {
-      ReachMin(); //Notify the user if the maximum amount of food to feed is equal to zero. 
-      return;
-  }
-  else {
-      if (!FIRST_PRESS_BUTTON3) foodReleasedEachTime -= 10;
-      else FIRST_PRESS_BUTTON3 = 0;
-      displayFoodReleased();
-  } 
-}
 //*** Functions for button4 ***//
 
 void printConfirm() {
@@ -558,14 +367,12 @@ void printConfirm() {
   lcd.print("TO CONFIRM");
 }
 // Func to set all elements of an array is equal to 0
-void setZero(int arr[3]) {
+void setZero(char arr[6]) {
   for (int i = 0; i < 3; i++) {
     arr[i] = 0;
   }
 }
 void clearSettings() {
-    FIRST_PRESS_BUTTON1 = 1;
-    FIRST_PRESS_BUTTON2 = 1;
     if (FIRST_PRESS_RESET) {
         printConfirm();
         FIRST_PRESS_RESET = 0;
@@ -573,11 +380,158 @@ void clearSettings() {
     else {
         MAX_FOOD_PER_DAY = 0;
         foodReleasedEachTime = 0;
-        setZero(hour); setZero(minute); setZero(second);
+        setZero(setSchedule0); setZero(setSchedule1); setZero(setSchedule2);
         lcd.init();
         lcd.clear();
         lcd.setCursor(4, 0);
         lcd.print("DONE !!");
         FIRST_PRESS_RESET = 1;
     } 
+}
+
+// void executeAction() {
+
+//       break;
+//     case 2:
+//       Serial.print("case 2");
+//       flag_settingSchedule = 1;
+//       char key = keypad.getKey();// Read the key
+//       if (key){
+//           if (index_schedule_keypad >= 6) index_schedule_keypad = 0;
+//           switch(status) {
+//               case SCHEDULE0_MODE:
+//                     setSchedule0[index_schedule_keypad] = key;
+//                     index_schedule_keypad++;
+//                     displayTimeSchedule_LCD(setSchedule0);
+//                     break;
+//               case SCHEDULE1_MODE:
+//                     setSchedule1[index_schedule_keypad] = key;
+//                     index_schedule_keypad++;
+//                     displayTimeSchedule_LCD(setSchedule1);
+//                     break;
+//               case SCHEDULE2_MODE:
+//                     setSchedule2[index_schedule_keypad] = key;
+//                     index_schedule_keypad++;
+//                     displayTimeSchedule_LCD(setSchedule2);
+//                     break;   
+//               default:
+//                     lcd.print("TIME TO FEED");
+//                     break; 
+//           }  
+//       } 
+//       //action2();
+//       break;
+//     case 3:
+//       Serial.print("case 3");
+//       displayFoodReleased();
+//       break;
+//     case 4:
+//       Serial.print("case 4");
+//       displayMaxFood();
+//       break;
+//     case 5:
+//     lcd.print("case 5");
+//       clearSettings();
+//       break;
+//     default:
+//       break;
+//   }
+// }
+
+// void action1() {
+//   lcd.clear();
+//   lcd.print(">Executing #1");
+//   delay(1500);
+// }
+void executeAction() {
+  switch (menu) {
+    case 1:
+      action1();
+      break;
+    case 2:
+      action2();
+      break;
+    case 3:
+      action3();
+      break;
+    case 4:
+      action4();
+      break;
+    case 5:
+      action5();
+      break;
+    default:
+      break;
+  }
+}
+
+void action1() {
+  switch (menu) {
+    case 1:
+        Serial.print("case 1");
+        switch(mode) {
+            case RC_MODE: 
+                displayRemainingFood_LCD(RC_MODE);
+                mode = RP_MODE;
+                break;
+            case RP_MODE: 
+                displayRemainingFood_LCD(RP_MODE);
+                mode = RF_MODE;
+                break;
+            case RF_MODE:
+                displayFoodReleased();
+                mode = T0_MODE;
+                break;
+            case T0_MODE:
+                displayTimeSchedule_LCD(setSchedule0);
+                mode = T1_MODE;
+                break;
+            case T1_MODE:
+                displayTimeSchedule_LCD(setSchedule1);
+                mode = T2_MODE;
+                break;
+            case T2_MODE:
+                displayTimeSchedule_LCD(setSchedule2);
+                mode = RC_MODE;
+                break;
+            default:
+                lcd.clear();
+        }
+  }
+}
+void action2() {
+  flag_settingSchedule = 1;
+  char key = keypad.getKey();// Read the key
+  if (key){
+      if (index_schedule_keypad >= 6) index_schedule_keypad = 0;
+      switch(status) {
+          case SCHEDULE0_MODE:
+                setSchedule0[index_schedule_keypad] = key;
+                index_schedule_keypad++;
+                displayTimeSchedule_LCD(setSchedule0);
+                break;
+          case SCHEDULE1_MODE:
+                setSchedule1[index_schedule_keypad] = key;
+                index_schedule_keypad++;
+                displayTimeSchedule_LCD(setSchedule1);
+                break;
+          case SCHEDULE2_MODE:
+                setSchedule2[index_schedule_keypad] = key;
+                index_schedule_keypad++;
+                displayTimeSchedule_LCD(setSchedule2);
+                break;   
+          default:
+                lcd.print("TIME TO FEED");
+                break; 
+      }  
+  }
+}
+void action3() {
+  displayFoodReleased();
+}
+void action4() {
+  displayMaxFood();
+}
+void action5() {
+  clearSettings();
 }
