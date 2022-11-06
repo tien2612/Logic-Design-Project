@@ -27,24 +27,19 @@
 #define T2_MODE      7                        // State of time2 to feed
 
 #define INIT_MODE            10
-#define SCHEDULE0_MODE       11                       // Set schedule for hour0
-#define SCHEDULE1_MODE       12                       // Set schedule for minute0
-#define SCHEDULE2_MODE       13                       // Set schedule for second0
+#define SCHEDULE0_MODE       11                       // Set schedule for schedule 0
+#define SCHEDULE1_MODE       12                       // Set schedule for schedule 1
+#define SCHEDULE2_MODE       13                       // Set schedule for schedule 2
+#define SCHEDULE0_ACTIVE     14
+#define SCHEDULE1_ACTIVE     15
+#define SCHEDULE2_ACTIVE     16
 
-#define TIME_NOTHING_CHANGES  20000           // If nothing changes after 20S, then turn off LCD to save power
+#define TIME_NOTHING_CHANGES  30000           // If nothing changes after 20S, then turn off LCD to save power
 #define MAX_FOOD              1600                     // Per day food allowance.
 #define MIN_FOOD              0
 
-#define INFOR_MENU                30
-#define SET_SCHEDULE_MENU         31
-#define SET_RELEASED_FOOD_MENU    32
-#define SET_MAX_FOOD_MENU         33
-#define RESET_MENU                34
-
 // TOUCH
-#define TOUCH_SENSOR 41
-#define TOUCH_OUT    37
-
+#define TOUCH_SENSOR A0
 
 const byte ROWS = 4; //four rows
 const byte COLS = 4; //three columns
@@ -54,35 +49,39 @@ char keys[ROWS][COLS] = {
 	{'7','8','9','C'},
 	{'*','0','#','D'}
 	};
-byte rowPins[ROWS] = {0, 1, 2, 3}; //connect to the row pinouts of the keypad
-byte colPins[COLS] = {4, 5, 6, 7}; //connect to the column pinouts of the keypad
-	
-Keypad_I2C keypad = Keypad_I2C( makeKeymap(keys), rowPins, colPins, ROWS, COLS, I2CADDR);
+
+// I2C
+// byte rowPins[ROWS] = {0, 1, 2, 3}; //connect to the row pinouts of the keypad
+// byte colPins[COLS] = {4, 5, 6, 7}; //connect to the column pinouts of the keypad
+
+byte rowPins[ROWS] = {6, 7, 8, 9}; //connect to the row pinouts of the keypad
+byte colPins[COLS] = {2, 3, 4, 5}; //connect to the column pinouts of the keypad
+
+//Keypad_I2C keypad = Keypad_I2C( makeKeymap(keys), rowPins, colPins, ROWS, COLS, I2CADDR);
+Keypad customKeypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
 // Declare for any var about time here.
 unsigned long startMillis;    // Some global variables available anywhere in the program
 unsigned long currentMillis; // Current time since the program started 
-char setSchedule0[6], setSchedule1[6], setSchedule2[6] = {0};
+unsigned long startMillisTouch;
 
 // Declare for any flag here.
-bool flag_longclick_btn1;
 bool flag_settingSchedule;
-bool flag_duringLongPress;
 bool flag_settingMaxFood;
 bool flag_sch0_active;         // If flag = 1 then feed the animal according to the time0 and vice versa.
 bool flag_sch1_active;         // If flag = 1 then feed the animal according to the time1 and vice versa.
 bool flag_sch2_active;         // If flag = 1 then feed the animal according to the time2 and vice versa.
-bool FIRST_PRESS_BUTTON0;
-bool FIRST_PRESS_BUTTON1;
-bool FIRST_PRESS_BUTTON2;
-bool FIRST_PRESS_BUTTON3;
 bool FIRST_PRESS_RESET;
 bool flag_confirm = false;
+bool flag_confirm_with_keypad = false;
+int index_schedule_keypad = 0;
+int index_foodisreleased = 0;
+int index_maxfood = 0;
 // Declare for the button or something else. 
 
-int btn[4] = {7, 10, 11, 12};
+int btn[4] = {10, 7, 11, 12};
 int mode = RC_MODE;                      // State to display on LCD (for button0).
-int counter;                   // Variable for calculating the total number of digits.
+int counter;                             // Variable for calculating the total number of digits.
 int status = SCHEDULE0_MODE;                   
 int menu = 1;
 // Declare about food here
@@ -90,6 +89,11 @@ int remaining_food = 0;
 int MAX_FOOD_PER_DAY = 1000;
 int foodReleasedEachTime = 150;
 int remainingFoodInContainer;
+char foodReleasedEachTime_array[3] = {'1', '5', '0'};
+char MAX_FOOD_PER_DAY_array[4] = {'1', '0', '0', '0'};
+char setSchedule0[6] = {'0', '0', '0', '0', '0', '0'};
+char setSchedule1[6] = {'0', '0', '0', '0', '0', '0'};
+char setSchedule2[6] = {'0', '0', '0', '0', '0', '0'};
 
 LiquidCrystal_I2C lcd(LCDADDR,16,2);  // set the LCD address to 0x20 for a 16 chars and 2 line display
 
@@ -196,7 +200,7 @@ void displayTimeSchedule_LCD(char setSchedule[6]) {
                  lcd.print("SET SCHEDULE2");
                  break;   
             default:
-                 lcd.print("TIME TO FEED");
+                 
                  break; 
         }  
     } else {
@@ -249,14 +253,23 @@ void displayTimeSchedule_LCD(char setSchedule[6]) {
 // Set max food per day
 void displayMaxFood() {
     lcd.init();
+    lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("MAX FOOD PER DAY");
     lcd.setCursor(6,1);
-    lcd.print(MAX_FOOD_PER_DAY);
+    int current_cursor = 6;
+    int temp = 6;
+    for (int i = 0; i < sizeof(MAX_FOOD_PER_DAY_array)/sizeof(MAX_FOOD_PER_DAY_array[0]); i++ ) {
+        if (MAX_FOOD_PER_DAY_array[i] > '9' || MAX_FOOD_PER_DAY_array[i] < '0') break;
+        lcd.print(MAX_FOOD_PER_DAY_array[i]);
+        temp = i;
+    }
+    lcd.setCursor(current_cursor + temp + 2, 1);
+    lcd.print("G");
+
 }
 
 void displayFoodReleased() {
-    int count = calDigitofNumber(foodReleasedEachTime);
     lcd.init();
     lcd.clear();
     lcd.setCursor(0,0);
@@ -264,20 +277,50 @@ void displayFoodReleased() {
     lcd.setCursor(0,1);
     lcd.print("EACH TIME:");
     lcd.setCursor(11, 1);
-    lcd.print(foodReleasedEachTime);
-    lcd.setCursor(11 + count + 1, 1);
+    int current_cursor = 11;
+    int temp = current_cursor;
+    for (int i = 0; i < sizeof(foodReleasedEachTime_array)/sizeof(foodReleasedEachTime_array[0]); i++ ) {
+        if (foodReleasedEachTime_array[i] > '9' || foodReleasedEachTime_array[i] < '0') break;
+        lcd.print(foodReleasedEachTime_array[i]);
+        temp = i;
+    }
+    lcd.setCursor(current_cursor + temp + 2, 1);
     lcd.print("G");
 }
 
-int index_schedule_keypad = 0;
+void setActiveSchedule(int num, bool flag_sch_active) {
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("SCHEDULE");
+  lcd.setCursor(12, 0);
+  lcd.print(num);
 
+  if (flag_sch_active) {
+    lcd.setCursor(5, 1);
+    lcd.print("ACTIVE");
+  } else {
+    lcd.setCursor(4, 1);
+    lcd.print("INACTIVE");
+  }
+}
+
+void checkValidSchedule(char *sch_arr) {
+  if (sch_arr[0] >= '2') sch_arr[0] = '2';
+
+  if (sch_arr[0] == '2' && sch_arr[1] >= '5') sch_arr[1] = '4';
+
+  if (sch_arr[2] >= '6') sch_arr[2] = '5';
+
+  if (sch_arr[4] >= '6') sch_arr[4] = '5';
+
+}
 void setup()
 {
     lcd.home();
     lcd.init();
     lcd.backlight();
     Serial.begin(9600);
-    keypad.begin(makeKeymap(keys));
+    //keypad.begin(makeKeymap(keys));
     Wire.begin();
     pinMode(btn[0], INPUT_PULLUP);
     pinMode(btn[1], INPUT_PULLUP);
@@ -288,16 +331,24 @@ void setup()
     flag_sch1_active = 0;
     flag_sch2_active = 0;
     FIRST_PRESS_RESET = 1; 
-    startMillis = millis();                          // Initial start time.
+    startMillis = millis();   
+    startMillisTouch = millis();                       // Initial start time.
     updateMenu();
 }
 
+
 void loop()
 {
+  char key = customKeypad.getKey();// Read the key
+  //Serial.print(key);
   flag_confirm = false;
   //Serial.print(menu);
   currentMillis = millis();  // Get the current "time" (actually the number of milliseconds since the program started)
   // Turn off LCD after 15s if nothing changes
+  if ( analogRead(TOUCH_SENSOR) > 650 && (currentMillis - startMillisTouch >= 80) ) {
+    Serial.print("touch!!");
+    startMillisTouch = millis();
+  }
   if (currentMillis - startMillis >= TIME_NOTHING_CHANGES) {
       lcd.noBacklight();
       lcd.noDisplay();
@@ -305,10 +356,12 @@ void loop()
     lcd.backlight();
     lcd.display();
   }
-  if ((!digitalRead(btn[0]) || !digitalRead(btn[1]) || !digitalRead(btn[2]) || !digitalRead(btn[3]))) startMillis = millis();
+  if ((!digitalRead(btn[0]) || !digitalRead(btn[1]) || !digitalRead(btn[2]) || !digitalRead(btn[3]) 
+                            || flag_confirm || flag_confirm_with_keypad) ) startMillis = millis();
   // Switching text if button 0 is pressed
   if (!digitalRead(btn[2])){
     flag_confirm = false;
+    flag_confirm_with_keypad = false;
     if (menu >= 5) menu = 1;
     else menu++;
     updateMenu();
@@ -317,8 +370,8 @@ void loop()
   }
 
   if (!digitalRead(btn[3])){
-              
     flag_confirm = false;
+    flag_confirm_with_keypad = false;
     if (menu <= 1) menu = 5;
     else menu--;
     updateMenu();
@@ -327,36 +380,59 @@ void loop()
   }
 
   if (!digitalRead(btn[0])){
-    flag_confirm = true;
-    
-    if (flag_settingSchedule) {
-      
-        index_schedule_keypad = 0;
-        if (menu == 2) {
-            switch(status) {
-              case SCHEDULE0_MODE:
-                  status = SCHEDULE1_MODE;
-                  displayTimeSchedule_LCD(setSchedule1);
-                  break;
-              case SCHEDULE1_MODE:
-                  status = SCHEDULE2_MODE;
-                  displayTimeSchedule_LCD(setSchedule2);
-                  break;
-              default:
-                  break;
-            }
+      flag_confirm = true;
+      index_schedule_keypad = 0;
+      flag_settingSchedule = false;
+      if (menu == 2) {
+        flag_settingSchedule = true;
+        flag_confirm_with_keypad = true;
+          switch(status) {
+          case SCHEDULE0_MODE:
+                displayTimeSchedule_LCD(setSchedule0);
+                break;
+          case SCHEDULE0_ACTIVE:
+                setActiveSchedule(0, flag_sch0_active);
+                break;
+          case SCHEDULE1_MODE:
+                displayTimeSchedule_LCD(setSchedule1);
+                break;
+          case SCHEDULE1_ACTIVE:
+                setActiveSchedule(1, flag_sch1_active);
+          case SCHEDULE2_MODE:
+                displayTimeSchedule_LCD(setSchedule2);
+                break;
+          case SCHEDULE2_ACTIVE:
+                setActiveSchedule(2, flag_sch2_active);
+                break;
+          default:
+              break; 
+          }
+      } else if (menu == 3) {
+        flag_settingSchedule = false;
+        flag_confirm_with_keypad = true;
+        displayFoodReleased();
+      } else if (menu == 4) {
+          flag_settingSchedule = false;
+          flag_confirm_with_keypad = true;
+          displayMaxFood();
+      } else if (menu == 5) {
+          flag_settingSchedule = false;
+          flag_confirm_with_keypad = false;
+          printConfirm();       
       }
-    }
-    delay(100);
-    while (!digitalRead(btn[0]));
+        delay(100);
+        while (!digitalRead(btn[0]));
   }
 
   if (flag_confirm) {
     executeAction(); // Confirm action.
   }
+
+  if (flag_confirm_with_keypad) {
+    executeAction(); // Confirm action.
+  }
 }
 
-//*** Functions for button4 ***//
 
 void printConfirm() {
   lcd.init();
@@ -365,84 +441,32 @@ void printConfirm() {
   lcd.print("PRESS AGAIN");
   lcd.setCursor(2, 1);
   lcd.print("TO CONFIRM");
+  //FIRST_PRESS_RESET = 0;
 }
 // Func to set all elements of an array is equal to 0
-void setZero(char arr[6]) {
-  for (int i = 0; i < 3; i++) {
-    arr[i] = 0;
-  }
+void setZero(char *arr) {
+    for (size_t i = 0 ; i < strlen (arr); i++) 
+      arr[i] = '0';
 }
+
 void clearSettings() {
     if (FIRST_PRESS_RESET) {
-        printConfirm();
         FIRST_PRESS_RESET = 0;
     } 
     else {
-        MAX_FOOD_PER_DAY = 0;
-        foodReleasedEachTime = 0;
         setZero(setSchedule0); setZero(setSchedule1); setZero(setSchedule2);
+        setZero(foodReleasedEachTime_array); setZero(MAX_FOOD_PER_DAY_array); 
+        flag_sch0_active = 0, flag_sch1_active = 0, flag_sch2_active = 0;
         lcd.init();
         lcd.clear();
         lcd.setCursor(4, 0);
         lcd.print("DONE !!");
         FIRST_PRESS_RESET = 1;
     } 
+      for (int i = 0; i < 6; i++) Serial.println(setSchedule0[i]);
+
 }
 
-// void executeAction() {
-
-//       break;
-//     case 2:
-//       Serial.print("case 2");
-//       flag_settingSchedule = 1;
-//       char key = keypad.getKey();// Read the key
-//       if (key){
-//           if (index_schedule_keypad >= 6) index_schedule_keypad = 0;
-//           switch(status) {
-//               case SCHEDULE0_MODE:
-//                     setSchedule0[index_schedule_keypad] = key;
-//                     index_schedule_keypad++;
-//                     displayTimeSchedule_LCD(setSchedule0);
-//                     break;
-//               case SCHEDULE1_MODE:
-//                     setSchedule1[index_schedule_keypad] = key;
-//                     index_schedule_keypad++;
-//                     displayTimeSchedule_LCD(setSchedule1);
-//                     break;
-//               case SCHEDULE2_MODE:
-//                     setSchedule2[index_schedule_keypad] = key;
-//                     index_schedule_keypad++;
-//                     displayTimeSchedule_LCD(setSchedule2);
-//                     break;   
-//               default:
-//                     lcd.print("TIME TO FEED");
-//                     break; 
-//           }  
-//       } 
-//       //action2();
-//       break;
-//     case 3:
-//       Serial.print("case 3");
-//       displayFoodReleased();
-//       break;
-//     case 4:
-//       Serial.print("case 4");
-//       displayMaxFood();
-//       break;
-//     case 5:
-//     lcd.print("case 5");
-//       clearSettings();
-//       break;
-//     default:
-//       break;
-//   }
-// }
-
-// void action1() {
-//   lcd.clear();
-//   lcd.print(">Executing #1");
-//   delay(1500);
-// }
 void executeAction() {
   switch (menu) {
     case 1:
@@ -466,72 +490,149 @@ void executeAction() {
 }
 
 void action1() {
-  switch (menu) {
-    case 1:
-        Serial.print("case 1");
-        switch(mode) {
-            case RC_MODE: 
-                displayRemainingFood_LCD(RC_MODE);
-                mode = RP_MODE;
-                break;
-            case RP_MODE: 
-                displayRemainingFood_LCD(RP_MODE);
-                mode = RF_MODE;
-                break;
-            case RF_MODE:
-                displayFoodReleased();
-                mode = T0_MODE;
-                break;
-            case T0_MODE:
-                displayTimeSchedule_LCD(setSchedule0);
-                mode = T1_MODE;
-                break;
-            case T1_MODE:
-                displayTimeSchedule_LCD(setSchedule1);
-                mode = T2_MODE;
-                break;
-            case T2_MODE:
-                displayTimeSchedule_LCD(setSchedule2);
-                mode = RC_MODE;
-                break;
-            default:
-                lcd.clear();
-        }
-  }
+    switch(mode) {
+        case RC_MODE: 
+            displayRemainingFood_LCD(RC_MODE);
+            mode = RP_MODE;
+            break;
+        case RP_MODE: 
+            displayRemainingFood_LCD(RP_MODE);
+            mode = RF_MODE;
+            break;
+        case RF_MODE:
+            displayFoodReleased();
+            mode = T0_MODE;
+            break;
+        case T0_MODE:
+            displayTimeSchedule_LCD(setSchedule0);
+            mode = T1_MODE;
+            break;
+        case T1_MODE:
+            displayTimeSchedule_LCD(setSchedule1);
+            mode = T2_MODE;
+            break;
+        case T2_MODE:
+            displayTimeSchedule_LCD(setSchedule2);
+            mode = RC_MODE;
+            break;
+        default:
+            lcd.clear();
+    }
 }
 void action2() {
   flag_settingSchedule = 1;
-  char key = keypad.getKey();// Read the key
+  char key = customKeypad.getKey();// Read the key
+  //Serial.print(key);
   if (key){
+      if (key == 'B') {
+        switch(status) {
+            case SCHEDULE0_ACTIVE:
+              flag_sch0_active = !flag_sch0_active;
+              break;
+            case SCHEDULE1_ACTIVE:
+              flag_sch1_active = !flag_sch1_active;
+              break;
+            case SCHEDULE2_ACTIVE:
+              flag_sch2_active = !flag_sch2_active;
+              break;
+            default:
+              break;
+        }
+      }
+      else if (key == 'A') {
+        index_schedule_keypad = 0;
+        switch(status) {
+            case SCHEDULE0_MODE:
+                  status = SCHEDULE0_ACTIVE;
+                  setActiveSchedule(0, flag_sch0_active);
+                  break;
+            case SCHEDULE0_ACTIVE:
+                  status = SCHEDULE1_MODE;
+                  displayTimeSchedule_LCD(setSchedule1);
+                  break;
+            case SCHEDULE1_MODE:
+                  status = SCHEDULE1_ACTIVE;
+                  setActiveSchedule(1, flag_sch1_active);
+                  break;
+            case SCHEDULE1_ACTIVE:
+                  status = SCHEDULE2_MODE;
+                  displayTimeSchedule_LCD(setSchedule2);
+                  break;
+            case SCHEDULE2_MODE:
+                  status = SCHEDULE2_ACTIVE;
+                  setActiveSchedule(2, flag_sch2_active);
+                  break;
+            case SCHEDULE2_ACTIVE:
+                  status = SCHEDULE0_MODE;
+                  displayTimeSchedule_LCD(setSchedule0);
+                  break;
+            default:
+                break; 
+        }  
+        return;
+      }
+      if (status == SCHEDULE0_MODE || status == SCHEDULE1_MODE || status == SCHEDULE2_MODE)
+          if (key > '9' || key < '0') return;
+
       if (index_schedule_keypad >= 6) index_schedule_keypad = 0;
       switch(status) {
           case SCHEDULE0_MODE:
                 setSchedule0[index_schedule_keypad] = key;
+                checkValidSchedule(setSchedule0);
                 index_schedule_keypad++;
                 displayTimeSchedule_LCD(setSchedule0);
                 break;
           case SCHEDULE1_MODE:
                 setSchedule1[index_schedule_keypad] = key;
+                checkValidSchedule(setSchedule1);
                 index_schedule_keypad++;
                 displayTimeSchedule_LCD(setSchedule1);
                 break;
           case SCHEDULE2_MODE:
                 setSchedule2[index_schedule_keypad] = key;
+                checkValidSchedule(setSchedule2);
                 index_schedule_keypad++;
                 displayTimeSchedule_LCD(setSchedule2);
-                break;   
+                break;  
+          case SCHEDULE0_ACTIVE:
+              setActiveSchedule(0, flag_sch0_active);
+              break;
+            case SCHEDULE1_ACTIVE:
+              setActiveSchedule(1, flag_sch1_active);
+              break;
+            case SCHEDULE2_ACTIVE:
+              setActiveSchedule(2, flag_sch2_active);
+              break; 
           default:
-                lcd.print("TIME TO FEED");
+                
                 break; 
       }  
   }
 }
 void action3() {
-  displayFoodReleased();
+  char key = customKeypad.getKey();// Read the key
+  if (key){
+    if (index_foodisreleased >= 3)  index_foodisreleased = 0;
+
+    if (key == 'A') return;
+    else if (key == 'C') index_foodisreleased--;
+    else foodReleasedEachTime_array[index_foodisreleased++] = key;
+
+    displayFoodReleased();
+  }
 }
 void action4() {
-  displayMaxFood();
+    char key = customKeypad.getKey();// Read the key
+    if (key){
+    if (index_maxfood >= 4)  index_maxfood = 0;
+
+    if (key == 'A') return;
+    else if (key == 'C') index_maxfood--;
+    else MAX_FOOD_PER_DAY_array[index_maxfood++] = key;
+
+    displayMaxFood();
+  }
 }
 void action5() {
-  clearSettings();
+    clearSettings();
 }
