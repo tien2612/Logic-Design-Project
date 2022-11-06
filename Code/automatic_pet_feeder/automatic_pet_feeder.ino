@@ -79,7 +79,7 @@ int index_foodisreleased = 0;
 int index_maxfood = 0;
 // Declare for the button or something else. 
 
-int btn[4] = {10, 7, 11, 12};
+int btn[4] = {9, 10, 11, 12};
 int mode = RC_MODE;                      // State to display on LCD (for button0).
 int counter;                             // Variable for calculating the total number of digits.
 int status = SCHEDULE0_MODE;                   
@@ -227,6 +227,7 @@ void displayTimeSchedule_LCD(char setSchedule[6]) {
                 } else lcd.print(" - INACTIVE");
                 break;
             default:
+              lcd.print(" - def");
               break;              
           }
     }
@@ -336,7 +337,75 @@ void setup()
     updateMenu();
 }
 
-
+void backFunction() {
+  Serial.print("backFunction()");
+  switch(menu) {
+    case 1:
+      switch(mode) {
+          case RC_MODE:
+             // displayRemainingFood_LCD(RC_MODE);
+              mode = T2_MODE;
+              displayTimeSchedule_LCD(setSchedule2); 
+              break;
+          case RP_MODE: 
+              mode = RC_MODE;
+              displayRemainingFood_LCD(RC_MODE);
+              break;
+          case RF_MODE:
+              mode = RP_MODE;
+              displayRemainingFood_LCD(RP_MODE);
+              break;
+          case T0_MODE:      
+              mode = RF_MODE;
+              displayFoodReleased();
+              break;
+          case T1_MODE:  
+              mode = T0_MODE;
+              displayTimeSchedule_LCD(setSchedule0);
+              break;
+          case T2_MODE:
+              mode = T1_MODE;
+              displayTimeSchedule_LCD(setSchedule1);
+              break;
+          default:
+            break;
+      }
+      break;
+    case 2:
+      switch(status) {
+        case SCHEDULE0_MODE:
+              status = SCHEDULE2_ACTIVE;
+              setActiveSchedule(2, flag_sch2_active);
+              break;
+        case SCHEDULE0_ACTIVE:
+              status = SCHEDULE0_MODE;
+              displayTimeSchedule_LCD(setSchedule0);
+              break;
+        case SCHEDULE1_MODE:
+              status = SCHEDULE0_ACTIVE;
+              setActiveSchedule(0, flag_sch0_active);
+              break;
+        case SCHEDULE1_ACTIVE:
+              status = SCHEDULE1_MODE;
+              displayTimeSchedule_LCD(setSchedule1);
+              break;
+        case SCHEDULE2_MODE:
+              status = SCHEDULE1_ACTIVE;
+              setActiveSchedule(1, flag_sch1_active);
+              break;
+        case SCHEDULE2_ACTIVE:
+              status = SCHEDULE2_MODE;
+              displayTimeSchedule_LCD(setSchedule2);
+              break;
+        default:
+            break; 
+      } 
+      break;
+    default:
+      Serial.println(menu);
+      break;
+  }
+}
 void loop()
 {
   char key = customKeypad.getKey();// Read the key
@@ -358,7 +427,7 @@ void loop()
   }
   if ((!digitalRead(btn[0]) || !digitalRead(btn[1]) || !digitalRead(btn[2]) || !digitalRead(btn[3]) 
                             || flag_confirm || flag_confirm_with_keypad) ) startMillis = millis();
-  // Switching text if button 0 is pressed
+  // DOWN BUTTON
   if (!digitalRead(btn[2])){
     flag_confirm = false;
     flag_confirm_with_keypad = false;
@@ -368,7 +437,7 @@ void loop()
    // delay(100);
     while (!digitalRead(btn[2])) delay(100);;
   }
-
+  // UP BUTTON
   if (!digitalRead(btn[3])){
     flag_confirm = false;
     flag_confirm_with_keypad = false;
@@ -378,7 +447,13 @@ void loop()
     
     while(!digitalRead(btn[3])) delay(100);;
   }
-
+  // BACK BUTTON
+  if (!digitalRead(btn[1])) {
+      flag_confirm = false;
+      backFunction();
+      while(!digitalRead(btn[1])) delay(100);;
+  }
+  // CONFIRM BUTTON
   if (!digitalRead(btn[0])){
       flag_confirm = true;
       index_schedule_keypad = 0;
@@ -386,27 +461,34 @@ void loop()
       if (menu == 2) {
         flag_settingSchedule = true;
         flag_confirm_with_keypad = true;
-          switch(status) {
+        switch(status) {
           case SCHEDULE0_MODE:
-                displayTimeSchedule_LCD(setSchedule0);
-                break;
-          case SCHEDULE0_ACTIVE:
+                status = SCHEDULE0_ACTIVE;
                 setActiveSchedule(0, flag_sch0_active);
                 break;
-          case SCHEDULE1_MODE:
+          case SCHEDULE0_ACTIVE:
+                status = SCHEDULE1_MODE;
                 displayTimeSchedule_LCD(setSchedule1);
                 break;
-          case SCHEDULE1_ACTIVE:
+          case SCHEDULE1_MODE:
+                status = SCHEDULE1_ACTIVE;
                 setActiveSchedule(1, flag_sch1_active);
-          case SCHEDULE2_MODE:
+                break;
+          case SCHEDULE1_ACTIVE:
+                status = SCHEDULE2_MODE;
                 displayTimeSchedule_LCD(setSchedule2);
                 break;
-          case SCHEDULE2_ACTIVE:
+          case SCHEDULE2_MODE:
+                status = SCHEDULE2_ACTIVE;
                 setActiveSchedule(2, flag_sch2_active);
+                break;
+          case SCHEDULE2_ACTIVE:
+                status = SCHEDULE0_MODE;
+                displayTimeSchedule_LCD(setSchedule0);
                 break;
           default:
               break; 
-          }
+        } 
       } else if (menu == 3) {
         flag_settingSchedule = false;
         flag_confirm_with_keypad = true;
@@ -420,8 +502,8 @@ void loop()
           flag_confirm_with_keypad = false;
           printConfirm();       
       }
-        delay(100);
-        while (!digitalRead(btn[0]));
+        
+        while (!digitalRead(btn[0])) delay(100);
   }
 
   if (flag_confirm) {
@@ -523,7 +605,7 @@ void action2() {
   flag_settingSchedule = 1;
   char key = customKeypad.getKey();// Read the key
   //Serial.print(key);
-  if (key){
+  if (key) {
       if (key == 'B') {
         switch(status) {
             case SCHEDULE0_ACTIVE:
@@ -540,37 +622,57 @@ void action2() {
         }
       }
       else if (key == 'A') {
-        index_schedule_keypad = 0;
+        index_schedule_keypad = 0; 
         switch(status) {
-            case SCHEDULE0_MODE:
-                  status = SCHEDULE0_ACTIVE;
-                  setActiveSchedule(0, flag_sch0_active);
-                  break;
-            case SCHEDULE0_ACTIVE:
-                  status = SCHEDULE1_MODE;
-                  displayTimeSchedule_LCD(setSchedule1);
-                  break;
-            case SCHEDULE1_MODE:
-                  status = SCHEDULE1_ACTIVE;
-                  setActiveSchedule(1, flag_sch1_active);
-                  break;
-            case SCHEDULE1_ACTIVE:
-                  status = SCHEDULE2_MODE;
-                  displayTimeSchedule_LCD(setSchedule2);
-                  break;
-            case SCHEDULE2_MODE:
-                  status = SCHEDULE2_ACTIVE;
-                  setActiveSchedule(2, flag_sch2_active);
-                  break;
-            case SCHEDULE2_ACTIVE:
-                  status = SCHEDULE0_MODE;
-                  displayTimeSchedule_LCD(setSchedule0);
-                  break;
-            default:
-                break; 
-        }  
+          case SCHEDULE0_MODE:
+                status = SCHEDULE0_ACTIVE;
+                setActiveSchedule(0, flag_sch0_active);
+                break;
+          case SCHEDULE0_ACTIVE:
+                status = SCHEDULE1_MODE;
+                displayTimeSchedule_LCD(setSchedule1);
+                break;
+          case SCHEDULE1_MODE:
+                status = SCHEDULE1_ACTIVE;
+                setActiveSchedule(1, flag_sch1_active);
+                break;
+          case SCHEDULE1_ACTIVE:
+                status = SCHEDULE2_MODE;
+                displayTimeSchedule_LCD(setSchedule2);
+                break;
+          case SCHEDULE2_MODE:
+                status = SCHEDULE2_ACTIVE;
+                setActiveSchedule(2, flag_sch2_active);
+                break;
+          case SCHEDULE2_ACTIVE:
+                status = SCHEDULE0_MODE;
+                displayTimeSchedule_LCD(setSchedule0);
+                break;
+          default:
+              break; 
+        } 
+        return;
+      } else if (key == 'C') {
+        index_schedule_keypad = 0; 
+        switch(status) {
+          case SCHEDULE0_MODE:
+                setZero(setSchedule0);
+                displayTimeSchedule_LCD(setSchedule0);
+                break;
+          case SCHEDULE1_MODE:
+                setZero(setSchedule1);
+                displayTimeSchedule_LCD(setSchedule1);
+                break;
+          case SCHEDULE2_MODE:
+                setZero(setSchedule2);
+                displayTimeSchedule_LCD(setSchedule2);
+                break;
+          default:
+              break; 
+        } 
         return;
       }
+
       if (status == SCHEDULE0_MODE || status == SCHEDULE1_MODE || status == SCHEDULE2_MODE)
           if (key > '9' || key < '0') return;
 
@@ -607,7 +709,7 @@ void action2() {
                 
                 break; 
       }  
-  }
+    }
 }
 void action3() {
   char key = customKeypad.getKey();// Read the key
