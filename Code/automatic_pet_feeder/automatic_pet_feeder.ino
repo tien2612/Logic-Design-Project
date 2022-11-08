@@ -1,3 +1,10 @@
+
+//#include <FirebaseESP8266.h>
+
+
+
+
+
 // AUTOMATIC PET FEEDER
 // HOW TO USE?
 // Button0: Press once to switch between food remains and food in container and time to feed information.
@@ -12,6 +19,15 @@
 #include <Keypad_I2C.h>
 #include <Keypad.h>        // GDY120705
 #include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DS1302.h>
+
+#include <ArduinoJson.h>
+
+//#include <ESP8266WiFi.h>
+
+
+//
 
 #define I2CADDR 0x21
 #define LCDADDR 0x27
@@ -38,7 +54,20 @@
 #define MAX_FOOD              1600                     // Per day food allowance.
 #define MIN_FOOD              0
 
+#define CONFIRM_KEY           'D'
+#define SWITCH_KEY            'A'
+#define DELETE_KEY            'C'
 // TOUCH
+/* wifi id + pass */
+#define WIFI_SSID "Tien"
+#define WIFI_PASSWORD "26122002"
+#define FIREBASE_HOST "automatic-pet-feeder-demo-default-rtdb.firebaseio.com"
+#define FIREBASE_AUTH "85aPqLpP0R65pOsOpkh8L62UnPOdbx5kRHrtebk0"
+//FirebaseData fbdo;
+String dulieu;
+int i =0;
+//FirebaseData firebaseData;
+///
 #define TOUCH_SENSOR A0
 
 const byte ROWS = 4; //four rows
@@ -51,14 +80,11 @@ char keys[ROWS][COLS] = {
 	};
 
 // I2C
-// byte rowPins[ROWS] = {0, 1, 2, 3}; //connect to the row pinouts of the keypad
-// byte colPins[COLS] = {4, 5, 6, 7}; //connect to the column pinouts of the keypad
+byte rowPins[ROWS] = {0, 1, 2, 3}; //connect to the row pinouts of the keypad
+byte colPins[COLS] = {4, 5, 6, 7}; //connect to the column pinouts of the keypad
 
-byte rowPins[ROWS] = {6, 7, 8, 9}; //connect to the row pinouts of the keypad
-byte colPins[COLS] = {2, 3, 4, 5}; //connect to the column pinouts of the keypad
-
-//Keypad_I2C keypad = Keypad_I2C( makeKeymap(keys), rowPins, colPins, ROWS, COLS, I2CADDR);
-Keypad customKeypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
+Keypad_I2C keypad = Keypad_I2C( makeKeymap(keys), rowPins, colPins, ROWS, COLS, I2CADDR);
+DS1302 rtc(2, 4, 5); //RST,DAT,CLK Pins of the DS1302 Module 
 
 // Declare for any var about time here.
 unsigned long startMillis;    // Some global variables available anywhere in the program
@@ -89,6 +115,8 @@ int remaining_food = 0;
 int MAX_FOOD_PER_DAY = 1000;
 int foodReleasedEachTime = 150;
 int remainingFoodInContainer;
+bool whileDisplayRealTimeClock = 1;
+
 char foodReleasedEachTime_array[3] = {'1', '5', '0'};
 char MAX_FOOD_PER_DAY_array[4] = {'1', '0', '0', '0'};
 char setSchedule0[6] = {'0', '0', '0', '0', '0', '0'};
@@ -138,6 +166,8 @@ void updateMenu() {
     case 6:
       menu = 5;
       break;
+    case 7:
+      menu = 6;
   }
 }
 int calDigitofNumber(int number) {
@@ -315,28 +345,6 @@ void checkValidSchedule(char *sch_arr) {
   if (sch_arr[4] >= '6') sch_arr[4] = '5';
 
 }
-void setup()
-{
-    lcd.home();
-    lcd.init();
-    lcd.backlight();
-    Serial.begin(9600);
-    //keypad.begin(makeKeymap(keys));
-    Wire.begin();
-    pinMode(btn[0], INPUT_PULLUP);
-    pinMode(btn[1], INPUT_PULLUP);
-    pinMode(btn[2], INPUT_PULLUP);
-    pinMode(btn[3], INPUT_PULLUP);
-
-    flag_sch0_active = 0;
-    flag_sch1_active = 0;
-    flag_sch2_active = 0;
-    FIRST_PRESS_RESET = 1; 
-    startMillis = millis();   
-    startMillisTouch = millis();                       // Initial start time.
-    updateMenu();
-}
-
 void backFunction() {
   Serial.print("backFunction()");
   switch(menu) {
@@ -406,25 +414,72 @@ void backFunction() {
       break;
   }
 }
+void setup()
+{ 
+    // setup for esp8266    
+    Serial.begin(9600);
+    // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    // Serial.print("Connecting to Wi-Fi");
+    // while (WiFi.status() != WL_CONNECTED)
+    // {
+    //   Serial.print(".");
+    //   delay(300);
+    // }
+    // Serial.println();
+    // Serial.print("Connected with IP: ");
+    // Serial.println(WiFi.localIP());
+    // Serial.println();
+    // Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+    // Firebase.reconnectWiFi(true);
+    // setup for real time clock
+    rtc.halt(false);
+    rtc.writeProtect(false);
+    lcd.backlight();
+    lcd.init();
+    //
+    lcd.home();
+    lcd.init();
+    lcd.backlight();
+    lcd.begin(16, 2);
+    keypad.begin(makeKeymap(keys));
+    Wire.begin();
+    pinMode(btn[0], INPUT_PULLUP);
+    pinMode(btn[1], INPUT_PULLUP);
+    pinMode(btn[2], INPUT_PULLUP);
+    pinMode(btn[3], INPUT_PULLUP);
+
+    flag_sch0_active = 0;
+    flag_sch1_active = 0;
+    flag_sch2_active = 0;
+    FIRST_PRESS_RESET = 1; 
+    startMillis = millis();   
+    startMillisTouch = millis();                       // Initial start time.
+    updateMenu();
+}
+
+
 void loop()
 {
-  char key = customKeypad.getKey();// Read the key
+  whileDisplayRealTimeClock = false;
   //Serial.print(key);
   flag_confirm = false;
   //Serial.print(menu);
   currentMillis = millis();  // Get the current "time" (actually the number of milliseconds since the program started)
   // Turn off LCD after 15s if nothing changes
-  if ( analogRead(TOUCH_SENSOR) > 650 && (currentMillis - startMillisTouch >= 80) ) {
-    Serial.print("touch!!");
-    startMillisTouch = millis();
-  }
+  // if ( analogRead(TOUCH_SENSOR) > 650 && (currentMillis - startMillisTouch >= 80) ) {
+  //   Serial.print("touch!!");
+  //   startMillisTouch = millis();
+  // }
   if (currentMillis - startMillis >= TIME_NOTHING_CHANGES) {
       lcd.noBacklight();
-      lcd.noDisplay();
+      lcd.noDisplay();   
   } else {
     lcd.backlight();
     lcd.display();
   }
+
+  // if (!whileDisplayRealTimeClock) char key = Keypad.getKey();// Read the key
+
   if ((!digitalRead(btn[0]) || !digitalRead(btn[1]) || !digitalRead(btn[2]) || !digitalRead(btn[3]) 
                             || flag_confirm || flag_confirm_with_keypad) ) startMillis = millis();
   // DOWN BUTTON
@@ -603,10 +658,10 @@ void action1() {
 }
 void action2() {
   flag_settingSchedule = 1;
-  char key = customKeypad.getKey();// Read the key
+  char key = keypad.getKey();// Read the key
   //Serial.print(key);
   if (key) {
-      if (key == 'B') {
+      if (key == CONFIRM_KEY) {
         switch(status) {
             case SCHEDULE0_ACTIVE:
               flag_sch0_active = !flag_sch0_active;
@@ -621,7 +676,7 @@ void action2() {
               break;
         }
       }
-      else if (key == 'A') {
+      else if (key == SWITCH_KEY) {
         index_schedule_keypad = 0; 
         switch(status) {
           case SCHEDULE0_MODE:
@@ -652,7 +707,7 @@ void action2() {
               break; 
         } 
         return;
-      } else if (key == 'C') {
+      } else if (key == DELETE_KEY) {
         index_schedule_keypad = 0; 
         switch(status) {
           case SCHEDULE0_MODE:
@@ -712,24 +767,24 @@ void action2() {
     }
 }
 void action3() {
-  char key = customKeypad.getKey();// Read the key
+  char key = keypad.getKey();// Read the key
   if (key){
     if (index_foodisreleased >= 3)  index_foodisreleased = 0;
 
-    if (key == 'A') return;
-    else if (key == 'C') index_foodisreleased--;
+    if (key == CONFIRM_KEY) return;
+    else if (key == DELETE_KEY) setZero(foodReleasedEachTime_array);
     else foodReleasedEachTime_array[index_foodisreleased++] = key;
 
     displayFoodReleased();
   }
 }
 void action4() {
-    char key = customKeypad.getKey();// Read the key
+    char key = keypad.getKey();// Read the key
     if (key){
     if (index_maxfood >= 4)  index_maxfood = 0;
 
-    if (key == 'A') return;
-    else if (key == 'C') index_maxfood--;
+    if (key == CONFIRM_KEY) return;
+    else if (key == DELETE_KEY) index_maxfood--;
     else MAX_FOOD_PER_DAY_array[index_maxfood++] = key;
 
     displayMaxFood();
@@ -737,4 +792,21 @@ void action4() {
 }
 void action5() {
     clearSettings();
+}
+
+
+
+void displayRealTimeClock()
+{
+  whileDisplayRealTimeClock = true;
+  lcd.setCursor(0,1);
+  lcd.print("Time:");
+  lcd.setCursor(5, 1);
+  lcd.print(rtc.getTimeStr());
+  lcd.setCursor(0, 0);
+  lcd.print("Date:");
+  lcd.setCursor(5,0);
+  lcd.print(rtc.getDateStr(FORMAT_SHORT, FORMAT_LITTLEENDIAN, '/'));
+
+  delay (100); 
 }
