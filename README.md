@@ -24,6 +24,6 @@ product on the market.
 ```
 #### There are four buttons that are used for impletement
 * Button to select menu.
+* Button to back when we are in the menu.
 * Button to scroll the menus down.
 * Button to scroll the menus up.
-* Button to reset all settings.
