@@ -11,11 +11,9 @@
 #include <Keypad_I2C.h>
 #include <Keypad.h>        // GDY120705
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>
 #include <DS1302.h>
 #include "HX711.h"
 #include <Servo.h>
-//
 
 #define I2CADDR 0x21
 #define LCDADDR 0x27
@@ -38,12 +36,13 @@
 #define SCHEDULE1_ACTIVE     15
 #define SCHEDULE2_ACTIVE     16
 
-#define TIME_NOTHING_CHANGES  30000           // If nothing changes after 20S, then turn off LCD to save power
-#define MAX_FOOD              1600                     // Per day food allowance.
-#define MIN_FOOD              0
-// TOUCH
+#define TIME_NOTHING_CHANGES    30000           // If nothing changes after 30S, then turn off LCD to save power
+#define MAX_FOOD                1600            // Per day food allowance.
+#define MIN_FOOD                0
+#define MAX_TIMES_FOOD_RELEASED 3
+/* Touch sensor */
 #define TOUCH_SENSOR A0
-
+/* KeyPad define */
 const byte ROWS = 4; //four rows
 const byte COLS = 4; //three columns
 char keys[ROWS][COLS] = {
@@ -53,46 +52,60 @@ char keys[ROWS][COLS] = {
   {'*','0','#','D'}
   };
 
-// I2C keypad
 byte rowPins[ROWS] = {0, 1, 2, 3}; //connect to the row pinouts of the keypad
 byte colPins[COLS] = {4, 5, 6, 7}; //connect to the column pinouts of the keypad
 
 Keypad_I2C keypad = Keypad_I2C( makeKeymap(keys), rowPins, colPins, ROWS, COLS, I2CADDR);
-// Real time clock
+
+/* Real time clock */
 DS1302 rtc(2, 4, 5); //RST,DAT,CLK Pins of the DS1302 Module 
 
-// Declare for any var about time here.
-unsigned long startMillis;    // Some global variables available anywhere in the program
-unsigned long currentMillis; // Current time since the program started 
+/* Declare for any var about time here. */
+unsigned long startMillis;        // Some global variables available anywhere in the program
+unsigned long currentMillis;      // Current time since the program started 
 unsigned long startMillisTouch;
 unsigned long startMillisReceiveData;
-// Declare for any flag here.
+/* Declare for any flag here. */
 bool flag_settingSchedule;
 bool flag_settingMaxFood;
-bool flag_sch0_active;         // If flag = 1 then feed the animal according to the time0 and vice versa.
-bool flag_sch1_active;         // If flag = 1 then feed the animal according to the time1 and vice versa.
-bool flag_sch2_active;         // If flag = 1 then feed the animal according to the time2 and vice versa.
+bool flag_sch0_active;             // If flag = 1 then feed the animal according to the time0 and vice versa.
+bool flag_sch1_active;            // If flag = 1 then feed the animal according to the time1 and vice versa.
+bool flag_sch2_active;            // If flag = 1 then feed the animal according to the time2 and vice versa.
 bool FIRST_PRESS_RESET;
 bool flag_confirm = false;
 bool flag_confirm_with_keypad = false;
-int index_schedule_keypad = 0;
-int index_foodisreleased = 0;
-int index_maxfood = 0;
-// Declare for the button or something else. 
+
+
+/* Declare for the button or something else. */
 
 int btn[4] = {9, 10, 11, 12};
 int mode = RC_MODE;                      // State to display on LCD (for button0).
 int counter;                             // Variable for calculating the total number of digits.
-int status = SCHEDULE0_MODE;                   
+int status = INIT_MODE;                   
 int menu = 1;
 // Declare about food here
 int remaining_food = 0;
-int MAX_FOOD_PER_DAY = 1000;
-int foodReleasedEachTime = 150;
 int remainingFoodInContainer;
 bool whileDisplayRealTimeClock = 1;
+int index_schedule_keypad = 0;
+int index_foodisreleased = 0;
+int index_maxfood = 0;
+int current_index_action3 = 0;
+int index_action1 = 0;
+/* Char array for store all datas of time/ food */
+struct foodReleased {
+  char food[3] = {'1', '5', '0'};
+};
 
-char foodReleasedEachTime_array[3] = {'1', '5', '0'};
+struct indexOfCharKeypad {
+  int releasedFood[3];
+  int flagReleasedFood[3];
+  int flagmaxFood;
+  int maxFood;
+};
+
+indexOfCharKeypad indexKeypad;
+foodReleased foodReleasedEachTime_array[3];
 char MAX_FOOD_PER_DAY_array[4] = {'1', '0', '0', '0'};
 char setSchedule0[6] = {'0', '0', '0', '0', '0', '0'};
 char setSchedule1[6] = {'0', '0', '0', '0', '0', '0'};
@@ -113,7 +126,7 @@ int REMAINFOOD_SCK_PIN = 5;
 int motorPin1 = 6;
 int motorPin2 = 7;
 int setting_food = 0;
-bool feed_active = true;
+bool feed_active = false;
 float CALIBRATION_FACTOR = -100; // weight / 1g
 
 // servo
@@ -296,22 +309,37 @@ void displayMaxFood() {
 
 }
 
-void displayFoodReleased() {
+void displayFoodReleased(int index) {
     lcd.init();
     lcd.clear();
     lcd.setCursor(0,0);
     lcd.print("FOOD IS RELEASED");
     lcd.setCursor(0,1);
-    lcd.print("EACH TIME:");
+    lcd.print("EACH TIME ");
+    lcd.setCursor(10, 1);
+
+    lcd.print(index);
     lcd.setCursor(11, 1);
-    int current_cursor = 11;
+    lcd.print(":");
+    lcd.setCursor(12, 1);
+    int current_cursor = 12;
     int temp = current_cursor;
-    for (int i = 0; i < sizeof(foodReleasedEachTime_array)/sizeof(foodReleasedEachTime_array[0]); i++ ) {
-        if (foodReleasedEachTime_array[i] > '9' || foodReleasedEachTime_array[i] < '0') break;
-        lcd.print(foodReleasedEachTime_array[i]);
-        temp = i;
+    int indexReleased;
+    if (indexKeypad.flagReleasedFood[index] == 1) {
+      indexReleased = 4;
+    } else indexReleased = indexKeypad.releasedFood[index] + 1;
+    if (indexKeypad.releasedFood[index] == 0) {
+      lcd.print(0);
+      temp = 1;
+    } else{ 
+        for (int i = 0; i < indexReleased; i++ ) {
+          if (foodReleasedEachTime_array[index].food[i] > '9' || foodReleasedEachTime_array[index].food[i] < '0') break;
+          lcd.print(foodReleasedEachTime_array[index].food[i]);
+          temp = i;
+        }
     }
-    lcd.setCursor(current_cursor + temp + 2, 1);
+    //Serial.println(current_cursor + temp);
+    lcd.setCursor(current_cursor + temp, 1);
     lcd.print("G");
 }
 
@@ -360,7 +388,7 @@ void backFunction() {
               break;
           case T0_MODE:      
               mode = RF_MODE;
-              displayFoodReleased();
+              displayFoodReleased(0);
               break;
           case T1_MODE:  
               mode = T0_MODE;
@@ -409,7 +437,19 @@ void backFunction() {
       break;
   }
 }
+// void initFoodReleased() {
+//   for (int i = 0; i < MAX_TIMES_FOOD_RELEASED; i++)
+//     foodReleasedEachTime_array[i].index_action1 = 0;
+// }
+void initIndexOfCharKeypad() {
+  indexKeypad.maxFood = 0;
+  indexKeypad.flagmaxFood = 0;
 
+  for (int i = 0; i < 3; i++) {
+    indexKeypad.releasedFood[i] = 0;
+    indexKeypad.flagReleasedFood[i] = 0;
+  }
+}
 void setup()
 { 
     
@@ -440,10 +480,13 @@ void setup()
     // Initial start time.
     startMillis = millis();   
     startMillisTouch = millis();       
-    startMillisReceiveData = millis();      
-    updateMenu();
+    startMillisReceiveData = millis();     
 
     // setup for weight sensor
+    lcd.setCursor(1,0);
+    lcd.print("Initializing");
+    lcd.setCursor(1, 1);
+    lcd.print("machine...");
     Serial.println("Initializing the scale");    
     current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
 
@@ -485,6 +528,10 @@ void setup()
     Serial.println("Readings:");
     // Servo
     myservo.attach(7);
+
+    //initFoodReleased(); 
+    initIndexOfCharKeypad();
+    updateMenu();
     
 }
 
@@ -496,26 +543,26 @@ void updateChar(char *arr, String data, int size) {
 }
 void loop() {
   // weight sensor
-  if (current_food.wait_ready_timeout(200)) {
-  readingRemainFood = round(current_food.get_units());
+  // if (current_food.wait_ready_timeout(200)) {
+  // readingRemainFood = round(current_food.get_units());
 
-  if (readingRemainFood != lastReadingRemainFood){
+  // if (readingRemainFood != lastReadingRemainFood){
     
-    Serial.print("Weight: ");
-    Serial.println(readingRemainFood);
-  }
-    lastReadingRemainFood = readingRemainFood;
-  }
+  //   Serial.print("Weight: ");
+  //   Serial.println(readingRemainFood);
+  // }
+  //   lastReadingRemainFood = readingRemainFood;
+  // }
   
   // for (int pos = 180; pos > 0; pos--) {
   //     if (readingRemainFood >= 10) {
   //       myservo.write(pos);
   //     } else break;
   // }                               // mỗi bước của vòng lặp tăng 1 độ
-    if (readingRemainFood >= 10) {
-      if (pos < 180 && pos > 0) myservo.write(pos--); 
-      else myservo.write(pos++); 
-    }
+    // if (readingRemainFood >= 10) {
+    //   if (pos < 180 && pos > 0) myservo.write(pos--); 
+    //   else myservo.write(pos++); 
+    // }
     
 //   for(int pos = 180; pos>=1; pos-=1)     // cho servo quay từ 179-->0 độ
 //   {                                
@@ -537,29 +584,29 @@ void loop() {
   }
   if (data[0] == 'R') {
     data.remove(0, 1);
-    updateChar(foodReleasedEachTime_array, data, 3);
+    //updateChar(foodReleasedEachTime_array, data, 3);
     data = "";
-    delay(60);
+    //delay(60);
   } else if (data[0] == 'X') {
     data.remove(0, 1);
     updateChar(setSchedule0, data, 6);
     data = "";
-    delay(60);
+    //delay(60);
   } else if (data[0] == 'Y') {
     data.remove(0, 1);
     updateChar(setSchedule1, data, 6);
     data = "";
-    delay(60);
+    //delay(60);
   } else if (data[0] == 'Z') {
     data.remove(0, 1);
     updateChar(setSchedule2, data, 6);
     data = "";
-    delay(60);
+    //delay(60);
   } else if (data[0] == 'M') {
     data.remove(0, 1);
     updateChar(MAX_FOOD_PER_DAY_array, data, 4);
     data = "";
-    delay(60);
+    //delay(60);
   }
 
   //Serial.println()
@@ -570,10 +617,10 @@ void loop() {
     lcd.backlight();
     lcd.display();
   }
-// //
+  /* If any button is pressed, then start calculate time for turn off LCD again. */
   if ((!digitalRead(btn[0]) || !digitalRead(btn[1]) || !digitalRead(btn[2]) || !digitalRead(btn[3]) 
                             || flag_confirm || flag_confirm_with_keypad) ) startMillis = millis();
-// //  // DOWN BUTTON
+  /* Down button */
   if (!digitalRead(btn[2])){
     flag_confirm = false;
     flag_confirm_with_keypad = false;
@@ -581,25 +628,25 @@ void loop() {
     else menu++;
     updateMenu();
 
-    while (!digitalRead(btn[2])) delay(100);
+    while (!digitalRead(btn[2])) delay(50);
   }
-  // UP BUTTON
- if (!digitalRead(btn[3])){
-   flag_confirm = false;
-   flag_confirm_with_keypad = false;
-   if (menu <= 1) menu = 5;
-   else menu--;
-   updateMenu();
-   
-   while(!digitalRead(btn[3])) delay(100);;
- }
- // BACK BUTTON
- if (!digitalRead(btn[1])) {
-     flag_confirm = false;
-     backFunction();
-     while(!digitalRead(btn[1])) delay(100);;
- }
- // CONFIRM BUTTON
+  /* Up button */
+  if (!digitalRead(btn[3])){
+    flag_confirm = false;
+    flag_confirm_with_keypad = false;
+    if (menu <= 1) menu = 5;
+    else menu--;
+    updateMenu();
+    
+    while(!digitalRead(btn[3])) delay(50);;
+  }
+  /* Back button */
+  if (!digitalRead(btn[1])) {
+      flag_confirm = false;
+      backFunction();
+      while(!digitalRead(btn[1])) delay(50);;
+  }
+  /* Confirm button */
   if (!digitalRead(btn[0])){
       flag_confirm = true;
       index_schedule_keypad = 0;
@@ -608,6 +655,10 @@ void loop() {
         flag_settingSchedule = true;
         flag_confirm_with_keypad = true;
         switch(status) {
+          case INIT_MODE:
+            status = SCHEDULE0_MODE;
+            displayTimeSchedule_LCD(setSchedule0);
+            break;
           case SCHEDULE0_MODE:
                 status = SCHEDULE0_ACTIVE;
                 setActiveSchedule(0, flag_sch0_active);
@@ -638,7 +689,9 @@ void loop() {
       } else if (menu == 3) {
         flag_settingSchedule = false;
         flag_confirm_with_keypad = true;
-        displayFoodReleased();
+        displayFoodReleased(current_index_action3);
+        // if (current_index_action3 >= 2) current_index_action3 = 0;
+        // else current_index_action3++;
       } else if (menu == 4) {
           flag_settingSchedule = false;
           flag_confirm_with_keypad = true;
@@ -649,7 +702,7 @@ void loop() {
           printConfirm();       
       }
         
-      while (!digitalRead(btn[0])) delay(100);
+      while (!digitalRead(btn[0])) delay(50);
   }
 
   if (flag_confirm) {
@@ -659,9 +712,6 @@ void loop() {
   if (flag_confirm_with_keypad) {
     executeAction(); // Confirm action.
   }
-
- 
-
 }
 
 
@@ -686,16 +736,15 @@ void clearSettings() {
     } 
     else {
         setZero(setSchedule0); setZero(setSchedule1); setZero(setSchedule2);
-        setZero(foodReleasedEachTime_array); setZero(MAX_FOOD_PER_DAY_array); 
+        setZero(MAX_FOOD_PER_DAY_array); 
+        for (int i = 0; i < MAX_TIMES_FOOD_RELEASED; i++) setZero(foodReleasedEachTime_array[i].food);
         flag_sch0_active = 0, flag_sch1_active = 0, flag_sch2_active = 0;
-        lcd.init();
+        mode = RC_MODE;
         lcd.clear();
         lcd.setCursor(4, 0);
         lcd.print("DONE !!");
         FIRST_PRESS_RESET = 1;
     } 
-      for (int i = 0; i < 6; i++) Serial.println(setSchedule0[i]);
-
 }
 
 void executeAction() {
@@ -731,8 +780,13 @@ void action1() {
             mode = RF_MODE;
             break;
         case RF_MODE:
-            displayFoodReleased();
-            mode = T0_MODE;
+            //Serial.println(index_action1);
+            displayFoodReleased(index_action1);
+            if (index_action1 >= 2) {
+              index_action1 = 0;
+              mode = T0_MODE;
+            }
+            else index_action1++;
             break;
         case T0_MODE:
             displayTimeSchedule_LCD(setSchedule0);
@@ -747,7 +801,7 @@ void action1() {
             mode = RC_MODE;
             break;
         default:
-            lcd.clear();
+            Serial.println(mode);
     }
 }
 void action2() {
@@ -861,27 +915,44 @@ void action2() {
     }
 }
 void action3() {
+  
   char key = keypad.getKey();// Read the key
+  
   if (key){
-    if (index_foodisreleased >= 3)  index_foodisreleased = 0;
-
-    if (key == 'D') return;
-    else if (key == 'C') setZero(foodReleasedEachTime_array);
-    else foodReleasedEachTime_array[index_foodisreleased++] = key;
-
-    displayFoodReleased();
+    if (key == 'D') { 
+      if (current_index_action3 >= 2) current_index_action3 = 0;
+      else current_index_action3++;
+      displayFoodReleased(current_index_action3);
+      return;
+    }
+    else if (key == 'C') {
+      for (int i = 0; i < MAX_TIMES_FOOD_RELEASED; i++) setZero(foodReleasedEachTime_array[i].food);
+    }
+    else if (key == 'A') {
+      if (indexKeypad.releasedFood[current_index_action3] > 0)
+        indexKeypad.releasedFood[current_index_action3]--;
+    }
+    else {
+      foodReleasedEachTime_array[current_index_action3].food[indexKeypad.releasedFood[current_index_action3]++] = key;
+    }
+    if (indexKeypad.releasedFood[current_index_action3] >= 3)  indexKeypad.flagReleasedFood[current_index_action3] = 1;
+    else indexKeypad.flagReleasedFood[current_index_action3] = 0;
+    displayFoodReleased(current_index_action3);
   }
 }
 void action4() {
   char key = keypad.getKey();// Read the key
     if (key){
-    if (index_maxfood >= 4)  index_maxfood = 0;
 
-    if (key == 'D') return;
-    else if (key == 'C') setZero(MAX_FOOD_PER_DAY_array);
-    else MAX_FOOD_PER_DAY_array[index_maxfood++] = key;
+      if (key == 'D') return;
+      else if (key == 'C') setZero(MAX_FOOD_PER_DAY_array);
+      else if (key == 'A') indexKeypad.maxFood--;
+      else MAX_FOOD_PER_DAY_array[indexKeypad.maxFood++] = key;
 
-    displayMaxFood();
+      if (indexKeypad.maxFood >= 4)  indexKeypad.flagmaxFood= 1;
+      else indexKeypad.flagmaxFood = 0;
+      
+      displayMaxFood();
   }
 }
 void action5() {
