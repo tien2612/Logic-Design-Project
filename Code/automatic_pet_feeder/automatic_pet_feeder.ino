@@ -557,7 +557,9 @@
 String data;
 int pos = 0;
 void updateChar(char *arr, String data, int size) {
-    for (size_t i = 0; i < size; i++) arr[i] = data[i];
+    for (int i = 0; i < size; i++) {
+      arr[i] = data[i];
+    }
 }
 
 int charArraytoInt(char *arr) {
@@ -571,7 +573,7 @@ int charArraytoInt(char *arr) {
 void loop() {
     // weight sensor
     currentMillis = millis();  // Get the current "time" (actually the number of milliseconds since the program started)
-    if (current_food.wait_ready_timeout(200)) {
+    if (current_food.wait_ready_timeout(0)) {
     readingRemainFood = round(current_food.get_units());
 
     if (readingRemainFood != lastReadingRemainFood){
@@ -607,21 +609,58 @@ void loop() {
     }
     if (data[0] == 'R') {
       data.remove(0, 1);
-      //updateChar(foodReleasedEachTime_array, data, 3);
+      updateChar(foodReleasedEachTime_array[3].food, data, data.length());
+      indexKeypad.releasedFood[3] = data.length() - 1;
       data = "";
       //delay(60);
     } else if (data[0] == 'X') {
       data.remove(0, 1);
+      /* Inactive or active schedule */
+      if (data[data.length() - 2] == 'Y') flag_sch0_active = true;
+      else flag_sch0_active = false;
+
+      /* Get food is released each time */
+      data.remove(data.length() - 2, 1);
+      String released_weight = data;
+      released_weight.remove(0, 6);
+      updateChar(foodReleasedEachTime_array[0].food, released_weight, released_weight.length());
+      indexKeypad.releasedFood[0] = released_weight.length() - 1;
+      /* Update schedule time */
+      data.remove(6, data.length() - 2);
       updateChar(setSchedule0, data, 6);
       data = "";
       //delay(60);
     } else if (data[0] == 'Y') {
       data.remove(0, 1);
+      /* Inactive or active schedule */
+      if (data[data.length() - 2] == 'Y') flag_sch1_active = true;
+      else flag_sch1_active = false;
+
+      /* Get food is released each time */
+      data.remove(data.length() - 2, 1);
+      String released_weight = data;
+      released_weight.remove(0, 6);
+      updateChar(foodReleasedEachTime_array[1].food, released_weight, released_weight.length());
+      indexKeypad.releasedFood[1] = released_weight.length() - 1;
+      /* Update schedule time */
+      data.remove(6, data.length() - 2);
       updateChar(setSchedule1, data, 6);
       data = "";
       //delay(60);
     } else if (data[0] == 'Z') {
       data.remove(0, 1);
+      /* Inactive or active schedule */
+      if (data[data.length() - 2] == 'Y') flag_sch2_active = true;
+      else flag_sch2_active = false;
+
+      /* Get food is released each time */
+      data.remove(data.length() - 2, 1);
+      String released_weight = data;
+      released_weight.remove(0, 6);
+      updateChar(foodReleasedEachTime_array[2].food, released_weight, released_weight.length());
+      indexKeypad.releasedFood[2] = released_weight.length() - 1;
+      /* Update schedule time */
+      data.remove(6, data.length() - 2);
       updateChar(setSchedule2, data, 6);
       data = "";
       //delay(60);
