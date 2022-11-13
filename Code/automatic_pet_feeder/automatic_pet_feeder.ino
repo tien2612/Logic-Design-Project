@@ -1,3 +1,4 @@
+
   // AUTOMATIC PET FEEDER
   // HOW TO USE?
   // Button0: Press once to switch between food remains and food in container and time to feed information.
@@ -14,6 +15,7 @@
   #include <DS1302.h>
   #include "HX711.h"
   #include <Servo.h>
+  #include <EEPROM.h>
 
   #define I2CADDR 0x21
   #define LCDADDR 0x27
@@ -40,6 +42,7 @@
   #define MAX_FOOD                1600            // Per day food allowance.
   #define MIN_FOOD                0
   #define MAX_TIMES_FOOD_RELEASED 3
+
   /* Touch sensor */
   #define TOUCH_SENSOR A0
   /* KeyPad define */
@@ -69,13 +72,12 @@
   /* Declare for any flag here. */
   bool flag_settingSchedule;
   bool flag_settingMaxFood;
-  bool flag_sch0_active;             // If flag = 1 then feed the animal according to the time0 and vice versa.
-  bool flag_sch1_active;            // If flag = 1 then feed the animal according to the time1 and vice versa.
-  bool flag_sch2_active;            // If flag = 1 then feed the animal according to the time2 and vice versa.
+  bool flag_sch0_active = false;             // If flag = 1 then feed the animal according to the time0 and vice versa.
+  bool flag_sch1_active = false;            // If flag = 1 then feed the animal according to the time1 and vice versa.
+  bool flag_sch2_active = false;            // If flag = 1 then feed the animal according to the time2 and vice versa.
   bool FIRST_PRESS_RESET;
   bool flag_confirm = false;
   bool flag_confirm_with_keypad = false;
-
 
   /* Declare for the button or something else. */
 
@@ -100,11 +102,11 @@
   };
 
   struct indexOfCharKeypad {
-    int releasedFood[3];
-    int flagReleasedFood[3];
+    int releasedFood[4];
+    int flagReleasedFood[4];
     int flagmaxFood;
     int maxFood;
-  };
+  } ;
 
   indexOfCharKeypad indexKeypad;
   foodReleased foodReleasedEachTime_array[4];
@@ -130,9 +132,79 @@
   int setting_food = 0;
   bool feed_active = false;
   float CALIBRATION_FACTOR = -100; // weight / 1g
-
+  String data;
+  int pos = 0;
+  int wifi_index = 0;
   // servo
   Servo myservo;  // create servo object to control a servo
+  /* EEPROM */
+  int flag_sche0_address = 0;
+  int flag_sche1_address = 1;
+  int flag_sche2_address = 2;
+
+  uint16_t currentAddress_foodReleased = 5;
+  uint16_t currentAddress_indexKeypad = 40;
+
+  int maxFood_address = 80;
+  int schedule0_address = 90;
+  int schedule1_address = 100;
+  int schedule2_address = 110;
+  int currentDailyFood_address = 120;
+  int feedActive_address = 130;
+
+  void eepromRead(uint16_t addr, void* output, uint16_t length) {
+    uint8_t* src; 
+    uint8_t* dst;
+    src = (uint8_t*)addr;
+    dst = (uint8_t*)output;
+    for (uint16_t i = 0; i < length; i++) {
+        *dst++ = eeprom_read_byte(src++);
+    }
+  }
+
+  void eepromWrite(uint16_t addr, void* input, uint16_t length) {
+      uint8_t* src; 
+      uint8_t* dst;
+      src = (uint8_t*)input;
+      dst = (uint8_t*)addr;
+      for (uint16_t i = 0; i < length; i++) {
+          eeprom_write_byte(dst++, *src++);
+      }
+  }
+
+  // void eepromWriteChar(int addr, char* arr, size_t length) {
+  //     //for (int i = addr; i < addr + length; i++) {
+  //       EEPROM.put(addr, arr);
+  //       EEPROM.commit();
+  //     //}
+  // }
+
+  // void eepromReadChar(int addr, char* arr, size_t length) {
+  //     //for (int i = addr, j = 0; i < addr + length; j++, i++) {
+  //       arr = EEPROM.get(addr, arr);
+  //     //}
+  // }
+
+  void eepromWriteChar(int address, char* numbers, int arraySize)
+  {
+    int addressIndex = address;
+    for (int i = 0; i < arraySize; i++) 
+    {
+      EEPROM.write(addressIndex, numbers[i]);
+      //EEPROM.write(addressIndex + 1, numbers[i] & 0xFF);
+      addressIndex += 1;
+    }
+  }
+  void eepromReadChar(int address, char* numbers, int arraySize)
+  {
+    int addressIndex = address;
+    for (int i = 0; i < arraySize; i++)
+    {
+      numbers[i] = (EEPROM.read(addressIndex));
+      addressIndex += 1;
+    }
+  }
+
   // update menu for lcd
   void updateMenu() {
     switch (menu) {
@@ -463,7 +535,7 @@
       foodReleasedEachTime_array[i].index = 0;
   }
   void initIndexOfCharKeypad() {
-    indexKeypad.maxFood = 0;
+    indexKeypad.maxFood = 4;
     indexKeypad.flagmaxFood = 0;
 
     for (int i = 0; i < 3; i++) {
@@ -471,13 +543,30 @@
       indexKeypad.flagReleasedFood[i] = 0;
     }
   }
+
+  void restoreDataFromEEPROM() {
+      // eepromRead(currentAddress_foodReleased, foodReleasedEachTime_array, sizeof(foodReleasedEachTime_array));
+      // eepromRead(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
+      eepromReadChar(maxFood_address , MAX_FOOD_PER_DAY_array, 4);
+      eepromReadChar(schedule0_address , setSchedule0, 6);
+      eepromReadChar(schedule1_address , setSchedule1, 6); 
+      eepromReadChar(schedule2_address , setSchedule2, 6);
+      currentDailyFood = EEPROM.read(currentDailyFood_address);
+      feed_active = EEPROM.read(feedActive_address);
+      flag_sch0_active = EEPROM.read(flag_sche0_address);
+      flag_sch1_active = EEPROM.read(flag_sche1_address);
+      flag_sch2_active = EEPROM.read(flag_sche2_address);
+  }
   void setup()
   { 
+      
       startMillis = millis();   
       startMillisTouch = millis();       
       startMillisReceiveData = millis();     
       startMillisFeedActive = millis();
       Serial.begin(9600);
+      restoreDataFromEEPROM();
+      //espSerial.begin(115200);
       // setup for real time clock
       rtc.halt(false);
       rtc.writeProtect(false);
@@ -497,9 +586,6 @@
       pinMode(btn[2], INPUT_PULLUP);
       pinMode(btn[3], INPUT_PULLUP);
       pinMode(btn[4], INPUT_PULLUP);
-      flag_sch0_active = 0;
-      flag_sch1_active = 0;
-      flag_sch2_active = 0;
       FIRST_PRESS_RESET = 1; 
       // Initial start time.
 
@@ -554,33 +640,29 @@
       
   }
 
-String data;
-int pos = 0;
-void updateChar(char *arr, String data, int size) {
-    for (int i = 0; i < size; i++) {
-      arr[i] = data[i];
-    }
-}
-
-int charArraytoInt(char *arr) {
-  int number = 0;
-  for (int i = 0; i < indexKeypad.maxFood; i++) {
-    number *= 10;
-    number += arr[i] - 48;
+  void updateChar(char *arr, String data, int size) {
+      for (int i = 0; i < size; i++) {
+        arr[i] = data[i];
+      }
   }
-  return number;
-}
-void loop() {
+
+  int charArraytoInt(char *arr) {
+    int number = 0;
+    for (int i = 0; i < indexKeypad.maxFood; i++) {
+      number *= 10;
+      number += arr[i] - 48;
+    }
+    return number;
+  }
+  void loop() {
     // weight sensor
     currentMillis = millis();  // Get the current "time" (actually the number of milliseconds since the program started)
-    if (current_food.wait_ready_timeout(0)) {
+    if (current_food.wait_ready_timeout(200)) {
     readingRemainFood = round(current_food.get_units());
-
     if (readingRemainFood != lastReadingRemainFood){
-      
       if ( feed_active && (!startMillisFeedActive || (currentMillis - startMillisFeedActive >= 600000)) 
                             && currentDailyFood < charArraytoInt(MAX_FOOD_PER_DAY_array) ) {
-        
+        Serial.println("active");
         if (readingRemainFood >= 10) {
           myservo.attach(7);
           myservo.write(pos++);
@@ -599,7 +681,7 @@ void loop() {
     
     flag_confirm = false;
     // Turn off LCD after 15s if nothing changes
-    if ( analogRead(TOUCH_SENSOR) > 300 ) {
+    if ( analogRead(TOUCH_SENSOR) > 650 ) {
       feed_active = true;
       Serial.print("touch!!");
       startMillisTouch = millis();
@@ -608,6 +690,7 @@ void loop() {
       data = Serial.readStringUntil('\n');
     }
     if (data[0] == 'R') {
+      feed_active = true;
       data.remove(0, 1);
       updateChar(foodReleasedEachTime_array[3].food, data, data.length());
       indexKeypad.releasedFood[3] = data.length() - 1;
@@ -878,12 +961,15 @@ void loop() {
           switch(status) {
               case SCHEDULE0_ACTIVE:
                 flag_sch0_active = !flag_sch0_active;
+                EEPROM.write(flag_sche0_address, flag_sch0_active);
                 break;
               case SCHEDULE1_ACTIVE:
                 flag_sch1_active = !flag_sch1_active;
+                EEPROM.write(flag_sche1_address, flag_sch1_active);
                 break;
               case SCHEDULE2_ACTIVE:
                 flag_sch2_active = !flag_sch2_active;
+                EEPROM.write(flag_sche2_address, flag_sch2_active);
                 break;
               default:
                 break;
@@ -951,27 +1037,33 @@ void loop() {
                   checkValidSchedule(setSchedule0);
                   index_schedule_keypad++;
                   displayTimeSchedule_LCD(setSchedule0);
+                  eepromWriteChar(schedule0_address, setSchedule0, 6);
                   break;
             case SCHEDULE1_MODE:
                   setSchedule1[index_schedule_keypad] = key;
                   checkValidSchedule(setSchedule1);
                   index_schedule_keypad++;
                   displayTimeSchedule_LCD(setSchedule1);
+                  eepromWriteChar(schedule1_address, setSchedule1, 6);
                   break;
             case SCHEDULE2_MODE:
                   setSchedule2[index_schedule_keypad] = key;
                   checkValidSchedule(setSchedule2);
                   index_schedule_keypad++;
                   displayTimeSchedule_LCD(setSchedule2);
+                  eepromWriteChar(schedule2_address, setSchedule2, 6);
                   break;  
             case SCHEDULE0_ACTIVE:
                 setActiveSchedule(0, flag_sch0_active);
+                EEPROM.write(flag_sche0_address, flag_sch0_active);
                 break;
               case SCHEDULE1_ACTIVE:
                 setActiveSchedule(1, flag_sch1_active);
+                EEPROM.write(flag_sche1_address, flag_sch1_active);
                 break;
               case SCHEDULE2_ACTIVE:
                 setActiveSchedule(2, flag_sch2_active);
+                EEPROM.write(flag_sche2_address, flag_sch2_active);
                 break; 
             default:
                   
@@ -991,10 +1083,10 @@ void loop() {
         return;
       }
       else if (key == 'C') {
-        for (int i = 0; i < MAX_TIMES_FOOD_RELEASED; i++) {
-          indexKeypad.releasedFood[i] = 0;
-          setZero(foodReleasedEachTime_array[i].food);
-        }
+        //for (int i = 0; i < MAX_TIMES_FOOD_RELEASED; i++) {
+          indexKeypad.releasedFood[current_index_action3] = 0;
+          setZero(foodReleasedEachTime_array[current_index_action3].food);
+        //}
       }
       else if (key == 'A') {
         if (indexKeypad.releasedFood[current_index_action3] > 0)
@@ -1003,11 +1095,14 @@ void loop() {
       else {
         if (indexKeypad.releasedFood[current_index_action3] >= 3) return;
         foodReleasedEachTime_array[current_index_action3].food[indexKeypad.releasedFood[current_index_action3]++] = key;
+        eepromWrite(currentAddress_foodReleased, foodReleasedEachTime_array, sizeof(foodReleasedEachTime_array));
+        
       }
       if (indexKeypad.releasedFood[current_index_action3] > 3)  indexKeypad.flagReleasedFood[current_index_action3] = 1;
       else indexKeypad.flagReleasedFood[current_index_action3] = 0;
 
       //Serial.println(indexKeypad.releasedFood[current_index_action3]);
+      eepromWrite(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
       displayFoodReleased(current_index_action3);
     }
   }
@@ -1021,11 +1116,15 @@ void loop() {
           setZero(MAX_FOOD_PER_DAY_array);
         }
         else if (key == 'A') indexKeypad.maxFood--;
-        else MAX_FOOD_PER_DAY_array[indexKeypad.maxFood++] = key;
+        else {
+          MAX_FOOD_PER_DAY_array[indexKeypad.maxFood++] = key;
+          eepromWriteChar(maxFood_address, MAX_FOOD_PER_DAY_array, 4);
+          
+        }
 
         if (indexKeypad.maxFood >= 4)  indexKeypad.flagmaxFood = 1;
         else indexKeypad.flagmaxFood = 0;
-        
+        eepromWrite(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
         displayMaxFood();
     }
   }
