@@ -37,44 +37,34 @@ void loop() {
       if(Firebase.getString(fbdo, "/hand_push/push"))
       {
         dulieu = fbdo.stringData();
-        dulieu.remove(0,2);
-        dulieu.remove(dulieu.length()-2,2);
         dulieu = "R" + dulieu;
-        Serial.println(dulieu);
       }
 
       if(Firebase.getString(fbdo, "/pet_app_demo/sche0"))
       {
-        dulieu = fbdo.stringData();
-        dulieu.remove(0,2);
-        dulieu.remove(dulieu.length()-2,2);
-        dulieu = "X" + dulieu;
         Serial.println(dulieu);
+        dulieu = fbdo.stringData();
+        dulieu = "X" + dulieu;
       }
       
       if(Firebase.getString(fbdo, "/pet_app_demo/sche1"))
       {
-        dulieu = fbdo.stringData();
-        dulieu.remove(0,2);
-        dulieu.remove(dulieu.length()-2,2);
-        dulieu = "Y" + dulieu;
         Serial.println(dulieu);
+        dulieu = fbdo.stringData();
+        dulieu = "Y" + dulieu;
       }
 
       if(Firebase.getString(fbdo, "/pet_app_demo/sche2"))
       {
-        dulieu = fbdo.stringData();
-        dulieu.remove(0,2);
-        dulieu.remove(dulieu.length()-2,2);
-        dulieu = "Z" + dulieu;
         Serial.println(dulieu);
+        dulieu = fbdo.stringData();
+        //dulieu.remove(0,2);
+        dulieu = "Z" + dulieu;
       }
 
       if(Firebase.getString(fbdo, "/pet_app_demo/maxfood"))
       {
         dulieu = fbdo.stringData();
-        dulieu.remove(0,2);
-        dulieu.remove(dulieu.length()-2,2);
         dulieu = "M" + dulieu;
         Serial.println(dulieu);
       }
@@ -84,7 +74,7 @@ void loop() {
       Firebase.deleteNode(fbdo, "/hand_push/push");
       Firebase.deleteNode(fbdo, "/pet_app_demo/sche1");
       Firebase.deleteNode(fbdo, "/pet_app_demo/sche2");
-      Firebase.deleteNode(fbdo, "/pet_app_demo/data");
+      Firebase.deleteNode(fbdo, "/pet_app_demo/sche0");
       Firebase.deleteNode(fbdo, "/pet_app_demo/maxfood");
       wifi_index = 0;
     }

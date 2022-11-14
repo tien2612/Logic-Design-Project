@@ -592,7 +592,7 @@
       lcd.setCursor(1, 0);
       lcd.print("Initializing");
       lcd.setCursor(1, 1);
-      lcd.print("machine...");
+      lcd.print("machine");
       Serial.println("Initializing the scale");    
       current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
 
@@ -605,7 +605,8 @@
     
       Serial.print("get value: \t\t");
       Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight (not set yet)
-    
+      lcd.setCursor(8, 1);
+      lcd.print(".");
       Serial.print("get units: \t\t");
       Serial.println(current_food.get_units(5), 1);  // print the average of 5 readings from the ADC minus tare weight (not set) divided
                 // by the SCALE parameter (not set yet)
@@ -617,7 +618,8 @@
       amount_of_remaining_food.set_scale(111.f);
       amount_of_remaining_food.tare(); 
       Serial.println("After setting up the scale:");
-    
+      lcd.setCursor(9, 1);
+      lcd.print(".");
       Serial.print("read: \t\t");
       Serial.println(current_food.read());                 // print a raw reading from the ADC
     
@@ -633,6 +635,8 @@
     
       Serial.println("Readings:");
       // Servo
+      lcd.setCursor(10, 1);
+      lcd.print(".");
       myservo.detach(); 
       initIndexOfCharKeypad();
       initFoodReleased();
@@ -688,7 +692,9 @@
     }
     while(Serial.available()) {
       data = Serial.readStringUntil('\n');
+      Serial.println(data);
     }
+    
     if (data[0] == 'R') {
       feed_active = true;
       data.remove(0, 1);
@@ -698,10 +704,11 @@
       //delay(60);
     } else if (data[0] == 'X') {
       data.remove(0, 1);
+      
       /* Inactive or active schedule */
-      if (data[data.length() - 2] == 'Y') flag_sch0_active = true;
+      if (data[data.length() - 2] == '1') flag_sch0_active = true;
       else flag_sch0_active = false;
-
+      EEPROM.write(flag_sche0_address, flag_sch0_active);
       /* Get food is released each time */
       data.remove(data.length() - 2, 1);
       String released_weight = data;
@@ -709,16 +716,19 @@
       updateChar(foodReleasedEachTime_array[0].food, released_weight, released_weight.length());
       indexKeypad.releasedFood[0] = released_weight.length() - 1;
       /* Update schedule time */
+      
       data.remove(6, data.length() - 2);
+      
       updateChar(setSchedule0, data, 6);
+      eepromWriteChar(schedule0_address, setSchedule0, 6);
       data = "";
       //delay(60);
     } else if (data[0] == 'Y') {
       data.remove(0, 1);
       /* Inactive or active schedule */
-      if (data[data.length() - 2] == 'Y') flag_sch1_active = true;
+      if (data[data.length() - 2] == '1') flag_sch1_active = true;
       else flag_sch1_active = false;
-
+      EEPROM.write(flag_sche1_address, flag_sch1_active);
       /* Get food is released each time */
       data.remove(data.length() - 2, 1);
       String released_weight = data;
@@ -726,16 +736,20 @@
       updateChar(foodReleasedEachTime_array[1].food, released_weight, released_weight.length());
       indexKeypad.releasedFood[1] = released_weight.length() - 1;
       /* Update schedule time */
+      
       data.remove(6, data.length() - 2);
+      
       updateChar(setSchedule1, data, 6);
+      eepromWriteChar(schedule1_address, setSchedule1, 6);      
       data = "";
       //delay(60);
     } else if (data[0] == 'Z') {
       data.remove(0, 1);
       /* Inactive or active schedule */
-      if (data[data.length() - 2] == 'Y') flag_sch2_active = true;
+      if (data[data.length() - 2] == '1') flag_sch2_active = true;
       else flag_sch2_active = false;
-
+      EEPROM.write(flag_sche2_address, flag_sch2_active);
+      
       /* Get food is released each time */
       data.remove(data.length() - 2, 1);
       String released_weight = data;
@@ -743,13 +757,16 @@
       updateChar(foodReleasedEachTime_array[2].food, released_weight, released_weight.length());
       indexKeypad.releasedFood[2] = released_weight.length() - 1;
       /* Update schedule time */
+      
       data.remove(6, data.length() - 2);
       updateChar(setSchedule2, data, 6);
+      eepromWriteChar(schedule2_address, setSchedule2, 6);
       data = "";
       //delay(60);
     } else if (data[0] == 'M') {
       data.remove(0, 1);
-      updateChar(MAX_FOOD_PER_DAY_array, data, 4);
+      updateChar(MAX_FOOD_PER_DAY_array, data, data.length());
+      eepromWriteChar(maxFood_address, MAX_FOOD_PER_DAY_array, data.length());
       data = "";
       //delay(60);
     }
