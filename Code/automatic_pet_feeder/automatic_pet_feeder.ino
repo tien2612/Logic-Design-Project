@@ -1,16 +1,24 @@
+  /* AUTOMATIC PET FEEDER
+  *** MENU ***
+  * 1. All informations (information of all menus)
+  * 2. Set schedule (up to 3 times)
+  * 3. Set food is released each time
+  * 4. Set max food per day
+  * 5. Reset settings
+  * 6. Language (VIE, ENG) .. We are working on it ..
 
-  // AUTOMATIC PET FEEDER
-  // HOW TO USE?
-  // Button0: Press once to switch between food remains and food in container and time to feed information.
-  // Button1: Setup time to feed your pet. Hold the button to switch between states (hour->minute->second->hour1->,..->hour->minute->,..). It depends on your current state.
-  // Button2: Set the maximum amount of food to feed per day (it can only be set to 1600g). Press once to increase 200 and hold the button to decrease the value by 200.
-  // Button3: Set the food is released each time (it can only be set to 1600g). Press once to increase 10 and hold the button to decrease the value by 10.
-  // Button4: Reset all settings. If you press once, a notification will be shown to confirm; if you press again, settings will be reset.
+  * Button0: Press once to access into a menu or display next information when we are inside a menu
+  * Button1: Press once to display previous information when we are inside a menu.
+  * Button2: Press once to scroll the menus down.
+  * Button3: Press once to scroll the menus up.
+
+  */
+
   #include <LiquidCrystal_I2C.h>
   #include <OneButton.h>
   #include "Key.h"
   #include <Keypad_I2C.h>
-  #include <Keypad.h>        // GDY120705
+  #include <Keypad.h>        
   #include <Wire.h>
   #include <DS1302.h>
   #include "HX711.h"
@@ -86,7 +94,7 @@
   int counter;                             // Variable for calculating the total number of digits.
   int status = INIT_MODE;                   
   int menu = 1;
-  // Declare about food here
+  /* Declare about food */
   int remaining_food = 0;
   int remainingFoodInContainer;
   bool whileDisplayRealTimeClock = 1;
@@ -95,7 +103,7 @@
   int index_maxfood = 0;
   int current_index_action3 = 0;
   int index_action1 = 0;
-  /* Char array for store all datas of time/ food */
+  /* Char array / struct for store all datas of time/ food */
   struct foodReleased {
     char food[3] = {'1', '5', '0'};
     int index;
@@ -116,7 +124,7 @@
   char setSchedule2[6] = {'0', '0', '0', '0', '0', '0'};
   int currentDailyFood = 0;
   LiquidCrystal_I2C lcd(LCDADDR,16,2);  // set the LCD address to 0x20 for a 16 chars and 2 line display
-  // weight sensor
+  /* weight sensor */
   HX711 current_food;
   HX711 amount_of_remaining_food;
   double readingCurrFood;
@@ -135,9 +143,9 @@
   String data;
   int pos = 0;
   int wifi_index = 0;
-  // servo
+  /* Servo */
   Servo myservo;  // create servo object to control a servo
-  /* EEPROM */
+  /* EEPROM address*/
   int flag_sche0_address = 0;
   int flag_sche1_address = 1;
   int flag_sche2_address = 2;
@@ -171,19 +179,6 @@
           eeprom_write_byte(dst++, *src++);
       }
   }
-
-  // void eepromWriteChar(int addr, char* arr, size_t length) {
-  //     //for (int i = addr; i < addr + length; i++) {
-  //       EEPROM.put(addr, arr);
-  //       EEPROM.commit();
-  //     //}
-  // }
-
-  // void eepromReadChar(int addr, char* arr, size_t length) {
-  //     //for (int i = addr, j = 0; i < addr + length; j++, i++) {
-  //       arr = EEPROM.get(addr, arr);
-  //     //}
-  // }
 
   void eepromWriteChar(int address, char* numbers, int arraySize)
   {
@@ -402,20 +397,29 @@
   }
 
   void displayFoodReleased(int index) {
+      int current_cursor = 0;
       lcd.init();
       lcd.clear();
       lcd.setCursor(0,0);
       lcd.print("FOOD IS RELEASED");
       lcd.setCursor(0,1);
-      lcd.print("EACH TIME ");
-      lcd.setCursor(10, 1);
+      if (index != 3) {
+        lcd.print("EACH TIME ");
+        lcd.setCursor(10, 1);
+        lcd.print(index);
+        current_cursor = 10;
+        lcd.setCursor(++current_cursor, 1);
+        lcd.print(":");
+      } else {
+        lcd.print("DAILY");
+        current_cursor = 4;
+        lcd.setCursor(++current_cursor, 1);
+        lcd.print(": ");
+        current_cursor = 6;
+      }
 
-      if (index != 3) lcd.print(index);
-      lcd.setCursor(11, 1);
-      lcd.print(":");
-      lcd.setCursor(12, 1);
-      int current_cursor = 12;
-      int temp = current_cursor;
+      lcd.setCursor(++current_cursor, 1);
+      int temp = 0;
       int indexReleased;
       if (indexKeypad.flagReleasedFood[index] == 1) {
         indexReleased = 3;
@@ -545,8 +549,8 @@
   }
 
   void restoreDataFromEEPROM() {
-      // eepromRead(currentAddress_foodReleased, foodReleasedEachTime_array, sizeof(foodReleasedEachTime_array));
-      // eepromRead(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
+      eepromRead(currentAddress_foodReleased, foodReleasedEachTime_array, sizeof(foodReleasedEachTime_array));
+      eepromRead(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
       eepromReadChar(maxFood_address , MAX_FOOD_PER_DAY_array, 4);
       eepromReadChar(schedule0_address , setSchedule0, 6);
       eepromReadChar(schedule1_address , setSchedule1, 6); 
@@ -592,50 +596,54 @@
       lcd.setCursor(1, 0);
       lcd.print("Initializing");
       lcd.setCursor(1, 1);
-      lcd.print("machine...");
+      lcd.print("machine");
       Serial.println("Initializing the scale");    
-      current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
+     // current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
 
-      Serial.println("Before setting up the scale:");
-      Serial.print("read: \t\t");
-      Serial.println(current_food.read());      // print a raw reading from the ADC
+      // Serial.println("Before setting up the scale:");
+      // Serial.print("read: \t\t");
+      // Serial.println(current_food.read());      // print a raw reading from the ADC
 
-      Serial.print("read average: \t\t");
-      Serial.println(current_food.read_average(20));   // print the average of 20 readings from the ADC
+      // Serial.print("read average: \t\t");
+      // Serial.println(current_food.read_average(20));   // print the average of 20 readings from the ADC
     
-      Serial.print("get value: \t\t");
-      Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight (not set yet)
-    
-      Serial.print("get units: \t\t");
-      Serial.println(current_food.get_units(5), 1);  // print the average of 5 readings from the ADC minus tare weight (not set) divided
-                // by the SCALE parameter (not set yet)
-      current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
-      current_food.set_scale(111.f);
-      current_food.tare();               // reset the scale to 0
+      // Serial.print("get value: \t\t");
+      // Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight (not set yet)
+      // lcd.setCursor(8, 1);
+      // lcd.print(".");
+      // Serial.print("get units: \t\t");
+      // Serial.println(current_food.get_units(5), 1);  // print the average of 5 readings from the ADC minus tare weight (not set) divided
+      //           // by the SCALE parameter (not set yet)
+      // current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
+      // current_food.set_scale(111.f);
+      // current_food.tare();               // reset the scale to 0
 
-      amount_of_remaining_food.begin(REMAINFOOD_DOUT_PIN, REMAINFOOD_SCK_PIN);
-      amount_of_remaining_food.set_scale(111.f);
-      amount_of_remaining_food.tare(); 
-      Serial.println("After setting up the scale:");
+      // amount_of_remaining_food.begin(REMAINFOOD_DOUT_PIN, REMAINFOOD_SCK_PIN);
+      // amount_of_remaining_food.set_scale(111.f);
+      // amount_of_remaining_food.tare(); 
+      // Serial.println("After setting up the scale:");
+      // lcd.setCursor(9, 1);
+      // lcd.print(".");
+      // Serial.print("read: \t\t");
+      // Serial.println(current_food.read());                 // print a raw reading from the ADC
     
-      Serial.print("read: \t\t");
-      Serial.println(current_food.read());                 // print a raw reading from the ADC
+      // Serial.print("read average: \t\t");
+      // Serial.println(current_food.read_average(20));       // print the average of 20 readings from the ADC
     
-      Serial.print("read average: \t\t");
-      Serial.println(current_food.read_average(20));       // print the average of 20 readings from the ADC
+      // Serial.print("get value: \t\t");
+      // Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight, set with tare()
     
-      Serial.print("get value: \t\t");
-      Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight, set with tare()
+      // Serial.print("get units: \t\t");
+      // Serial.println(current_food.get_units(5), 1);        // print the average of 5 readings from the ADC minus tare weight, divided
+      // // by the SCALE parameter set with set_scale
     
-      Serial.print("get units: \t\t");
-      Serial.println(current_food.get_units(5), 1);        // print the average of 5 readings from the ADC minus tare weight, divided
-      // by the SCALE parameter set with set_scale
-    
-      Serial.println("Readings:");
-      // Servo
+      // Serial.println("Readings:");
+      // // Servo
+      // lcd.setCursor(10, 1);
+      // lcd.print(".");
       myservo.detach(); 
-      initIndexOfCharKeypad();
-      initFoodReleased();
+      // initIndexOfCharKeypad();
+      // initFoodReleased();
       updateMenu();
       
   }
@@ -688,7 +696,9 @@
     }
     while(Serial.available()) {
       data = Serial.readStringUntil('\n');
+      Serial.println(data);
     }
+    
     if (data[0] == 'R') {
       feed_active = true;
       data.remove(0, 1);
@@ -698,10 +708,11 @@
       //delay(60);
     } else if (data[0] == 'X') {
       data.remove(0, 1);
+      
       /* Inactive or active schedule */
-      if (data[data.length() - 2] == 'Y') flag_sch0_active = true;
+      if (data[data.length() - 2] == '1') flag_sch0_active = true;
       else flag_sch0_active = false;
-
+      EEPROM.write(flag_sche0_address, flag_sch0_active);
       /* Get food is released each time */
       data.remove(data.length() - 2, 1);
       String released_weight = data;
@@ -709,16 +720,19 @@
       updateChar(foodReleasedEachTime_array[0].food, released_weight, released_weight.length());
       indexKeypad.releasedFood[0] = released_weight.length() - 1;
       /* Update schedule time */
+      
       data.remove(6, data.length() - 2);
+      
       updateChar(setSchedule0, data, 6);
+      eepromWriteChar(schedule0_address, setSchedule0, 6);
       data = "";
       //delay(60);
     } else if (data[0] == 'Y') {
       data.remove(0, 1);
       /* Inactive or active schedule */
-      if (data[data.length() - 2] == 'Y') flag_sch1_active = true;
+      if (data[data.length() - 2] == '1') flag_sch1_active = true;
       else flag_sch1_active = false;
-
+      EEPROM.write(flag_sche1_address, flag_sch1_active);
       /* Get food is released each time */
       data.remove(data.length() - 2, 1);
       String released_weight = data;
@@ -726,16 +740,20 @@
       updateChar(foodReleasedEachTime_array[1].food, released_weight, released_weight.length());
       indexKeypad.releasedFood[1] = released_weight.length() - 1;
       /* Update schedule time */
+      
       data.remove(6, data.length() - 2);
+      
       updateChar(setSchedule1, data, 6);
+      eepromWriteChar(schedule1_address, setSchedule1, 6);      
       data = "";
       //delay(60);
     } else if (data[0] == 'Z') {
       data.remove(0, 1);
       /* Inactive or active schedule */
-      if (data[data.length() - 2] == 'Y') flag_sch2_active = true;
+      if (data[data.length() - 2] == '1') flag_sch2_active = true;
       else flag_sch2_active = false;
-
+      EEPROM.write(flag_sche2_address, flag_sch2_active);
+      
       /* Get food is released each time */
       data.remove(data.length() - 2, 1);
       String released_weight = data;
@@ -743,13 +761,16 @@
       updateChar(foodReleasedEachTime_array[2].food, released_weight, released_weight.length());
       indexKeypad.releasedFood[2] = released_weight.length() - 1;
       /* Update schedule time */
+      
       data.remove(6, data.length() - 2);
       updateChar(setSchedule2, data, 6);
+      eepromWriteChar(schedule2_address, setSchedule2, 6);
       data = "";
       //delay(60);
     } else if (data[0] == 'M') {
       data.remove(0, 1);
-      updateChar(MAX_FOOD_PER_DAY_array, data, 4);
+      updateChar(MAX_FOOD_PER_DAY_array, data, data.length());
+      eepromWriteChar(maxFood_address, MAX_FOOD_PER_DAY_array, data.length());
       data = "";
       //delay(60);
     }
@@ -1095,13 +1116,11 @@
       else {
         if (indexKeypad.releasedFood[current_index_action3] >= 3) return;
         foodReleasedEachTime_array[current_index_action3].food[indexKeypad.releasedFood[current_index_action3]++] = key;
-        eepromWrite(currentAddress_foodReleased, foodReleasedEachTime_array, sizeof(foodReleasedEachTime_array));
-        
       }
       if (indexKeypad.releasedFood[current_index_action3] > 3)  indexKeypad.flagReleasedFood[current_index_action3] = 1;
       else indexKeypad.flagReleasedFood[current_index_action3] = 0;
 
-      //Serial.println(indexKeypad.releasedFood[current_index_action3]);
+      eepromWrite(currentAddress_foodReleased, foodReleasedEachTime_array, sizeof(foodReleasedEachTime_array));
       eepromWrite(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
       displayFoodReleased(current_index_action3);
     }
