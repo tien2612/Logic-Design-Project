@@ -102,7 +102,7 @@ bool whileDisplayRealTimeClock = 1;
 int index_schedule_keypad = 0;
 int index_foodisreleased = 0;
 int index_maxfood = 0;
-int current_index_action3 = 0;
+int current_index_action3 = -1;
 int index_action1 = 0;
 /* Char array / struct for store all datas of time/ food */
 struct foodReleased {
@@ -369,16 +369,10 @@ void displayMaxFood() {
     lcd.setCursor(6,1);
     int current_cursor = 6;
     int temp = 0;
-    for (int i = 0; i < 4; i++ ) {
-        Serial.println(MAX_FOOD_PER_DAY_array[i]);
-    }
-
-
     int indexMaxFood;
     if (indexKeypad.flagmaxFood == 1) {
       indexMaxFood = 4;
     } else indexMaxFood = indexKeypad.maxFood;
-        
     if (indexKeypad.maxFood == 0) {
       lcd.print(0);
       temp = 1;
@@ -395,9 +389,6 @@ void displayMaxFood() {
 }
 
 void displayFoodReleased(int index) {
-    Serial.print(index); Serial.print(": "); Serial.println(indexKeypad.releasedFood[index]); Serial.print('\n');
-    for (int i = 0; i < 3; i++) Serial.print(foodReleasedEachTime_array[index].food[i]);
-    Serial.println('\n');
     int current_cursor = 0;
     lcd.init();
     lcd.clear();
@@ -795,7 +786,7 @@ void loop() {
     delay(60);
   }
 
-  /* Turn off LCD after 15s if nothing changes */
+  /* Turn off LCD after 30s if nothing changes */
   if (currentMillis - startMillis >= TIME_NOTHING_CHANGES) {
       lcd.noBacklight();
       lcd.noDisplay();   
@@ -875,9 +866,9 @@ void loop() {
       } else if (menu == 3) {
         flag_settingSchedule = false;
         flag_confirm_with_keypad = true;
-        displayFoodReleased(current_index_action3);
-        // if (current_index_action3 >= 2) current_index_action3 = 0;
-        // else current_index_action3++;
+        if (current_index_action3 >= 3) current_index_action3 = -1;
+        displayFoodReleased(++current_index_action3);
+        
       } else if (menu == 4) {
           flag_settingSchedule = false;
           flag_confirm_with_keypad = true;
@@ -1124,17 +1115,13 @@ void action2() {
       }  
     }
 }
-void action3() {
-  
+void action3() {  
   char key = keypad.getKey();// Read the key
   //Serial.println(indexKeypad.releasedFood[current_index_action3]);
   if (key){
     if (key == 'D') { 
-      Serial.println(current_index_action3);
       if (current_index_action3 >= 3) current_index_action3 = 0;
       else current_index_action3++;
-      Serial.println(current_index_action3);
-      //displayFoodReleased(current_index_action3);
     }
     else if (key == 'C') {
       indexKeypad.releasedFood[current_index_action3] = 0;
@@ -1158,25 +1145,27 @@ void action3() {
 }
 void action4() {
   char key = keypad.getKey();// Read the key
+  //Serial.println(indexKeypad.releasedFood[current_index_action3]);
   if (key){
-    for (int i = 0; i < 4; i++) Serial.print(MAX_FOOD_PER_DAY_array[i]);
-
-    Serial.println('\n');
-    if (key == 'D') return;
-    else if (key == 'C') {
-        indexKeypad.maxFood = 0;
+    if (key == 'D') { 
+      return;
     }
-    else if (key == 'A') indexKeypad.maxFood--;
+    else if (key == 'C') {
+      indexKeypad.maxFood = 0;
+      //setZero(foodReleasedEachTime_array[current_index_action3].food);
+    }
+    else if (key == 'A') {
+      if (indexKeypad.maxFood > 0) indexKeypad.maxFood--;
+    }
     else {
+      if (indexKeypad.maxFood >= 4) return;
       MAX_FOOD_PER_DAY_array[indexKeypad.maxFood++] = key;
     }
-
-    if (indexKeypad.maxFood >= 4) indexKeypad.flagmaxFood = 1;
+    if (indexKeypad.maxFood > 4) indexKeypad.flagmaxFood = 1;
     else indexKeypad.flagmaxFood = 0;
 
     eepromWriteChar(maxFood_address, MAX_FOOD_PER_DAY_array, 4);
     eepromWrite(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
-
     displayMaxFood();
   }
 }
