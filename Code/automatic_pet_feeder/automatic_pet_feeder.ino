@@ -51,6 +51,7 @@
 #define MAX_FOOD                1600            // Per day food allowance.
 #define MIN_FOOD                0
 #define MAX_TIMES_FOOD_RELEASED 4
+#define MAX_TIMES_SCHEDULE      3
 
 /* Touch sensor */
 #define TOUCH_SENSOR A0
@@ -70,7 +71,7 @@ byte colPins[COLS] = {4, 5, 6, 7}; //connect to the column pinouts of the keypad
 Keypad_I2C keypad = Keypad_I2C( makeKeymap(keys), rowPins, colPins, ROWS, COLS, I2CADDR);
 
 /* Real time clock */
-DS1302 rtc(2, 4, 5); //RST,DAT,CLK Pins of the DS1302 Module 
+DS1302 rtc(A1, A2, A3); //RST,DAT,CLK Pins of the DS1302 Module 
 
 /* Declare for any var about time here. */
 unsigned long startMillis;        // Some global variables available anywhere in the program
@@ -575,16 +576,18 @@ void setup()
   Arduino_softSerial.begin(9600);
 
   restoreDataFromEEPROM();
-  // setup for real time clock
+  /* Setup for real time clock */
   rtc.halt(false);
   rtc.writeProtect(false);
-  lcd.backlight();
+  // rtc.setTime(23, 51, 00);  //Hour, Min, Sec 
+  // rtc.setDate(21, 11, 2022); //Day, Month, Year
   
   lcd.home();
   lcd.init();
   lcd.clear();
   lcd.backlight();
   lcd.begin(16, 2);
+  lcd.print("F");
   keypad.begin(makeKeymap(keys));
   Wire.begin();
 
@@ -650,8 +653,32 @@ void setup()
   updateMenu();
 }
 
+void checkFeedTime() {
+  for (int i = 0; i < MAX_TIMES_SCHEDULE + 1; i++) {
+    String time = "";
+    String current_time = rtc.getTimeStr();
+    int weight = 0;
+    for (int j = 0; j < 6; j++) {
+      if (j % 2 == 0 && j != 0) time += ':';
+
+      if (i == 0) time += setSchedule0[j];
+      else if (i == 1) time += setSchedule1[j];
+      else if (i == 2) time += setSchedule2[j];
+    }
+
+    if (current_time == time) {
+      feed_active = true;
+      String regChar = "FS";
+      int food = charArraytoInt(foodReleasedEachTime_array[i].food);
+      Arduino_softSerial.println(regChar + food + " " + rtc.getDateStr(2, FORMAT_MIDDLEENDIAN, '-') + " " + rtc.getTimeStr());
+      time = "";
+    }
+  }
+}
 void loop() {
   // weight sensor
+  feed_active = false;
+  checkFeedTime();
   currentMillis = millis();  // Get the current "time" (actually the number of milliseconds since the program started)
   if (current_food.wait_ready_timeout(10)) {
   readingRemainFood = round(current_food.get_units());
@@ -684,7 +711,6 @@ void loop() {
   }
 
   /* Received data from ESP8266 */
-
   while(Arduino_softSerial.available()) {
     data = Arduino_softSerial.readStringUntil('\n');
     data.remove(data.length() - 1, 1);
@@ -1175,7 +1201,7 @@ void action5() {
 
 void displayRealTimeClock()
 {
-  whileDisplayRealTimeClock = true;
+  // whileDisplayRealTimeClock = true;
   lcd.setCursor(0,1);
   lcd.print("Time:");
   lcd.setCursor(5, 1);
