@@ -535,6 +535,50 @@ void initIndexOfCharKeypad() {
   indexKeypad.maxFood = 4;
 }
 
+void initLoadCell() {
+    Serial.println("HX711");
+    Serial.println("Initializing the scale");    
+    current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
+
+    Serial.println("Before setting up the scale:");
+    Serial.print("read: \t\t");
+    Serial.println(current_food.read());      // print a raw reading from the ADC
+
+    
+    Serial.print("read average: \t\t");
+    Serial.println(current_food.read_average(20));   // print the average of 20 readings from the ADC
+  
+    Serial.print("get value: \t\t");
+    Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight (not set yet)
+  
+    Serial.print("get units: \t\t");
+    Serial.println(current_food.get_units(5), 1);  // print the average of 5 readings from the ADC minus tare weight (not set) divided
+              // by the SCALE parameter (not set yet)
+              
+    current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
+    current_food.set_scale(111.f);
+    current_food.tare();               // reset the scale to 0
+    amount_of_remaining_food.begin(REMAINFOOD_DOUT_PIN, REMAINFOOD_SCK_PIN);
+    amount_of_remaining_food.set_scale(111.f);
+    amount_of_remaining_food.tare(); 
+       
+    Serial.println("After setting up the scale:");
+  
+    Serial.print("read: \t\t");
+    Serial.println(current_food.read());                 // print a raw reading from the ADC
+  
+    Serial.print("read average: \t\t");
+    Serial.println(current_food.read_average(20));       // print the average of 20 readings from the ADC
+  
+    Serial.print("get value: \t\t");
+    Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight, set with tare()
+  
+    Serial.print("get units: \t\t");
+    Serial.println(current_food.get_units(5), 1);        // print the average of 5 readings from the ADC minus tare weight, divided
+              // by the SCALE parameter set with set_scale
+  
+    Serial.println("Readings:");
+}
 void restoreDataFromEEPROM() {
     eepromRead(currentAddress_foodReleased, foodReleasedEachTime_array, sizeof(foodReleasedEachTime_array));
     eepromRead(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
@@ -565,94 +609,6 @@ int charArraytoInt(char *arr) {
 SoftwareSerial Arduino_softSerial(10, 11); // RX: 10 - TX: 11
 String data_send = "";
 
-void setup()
-{ 
-  startMillis = millis();   
-  startMillisTouch = millis();       
-  startMillisReceiveData = millis();     
-  startMillisFeedActive = millis();
-  Serial.begin(57600);
-
-  Arduino_softSerial.begin(9600);
-
-  restoreDataFromEEPROM();
-  /* Setup for real time clock */
-  rtc.halt(false);
-  rtc.writeProtect(false);
-  // rtc.setTime(23, 51, 00);  //Hour, Min, Sec 
-  // rtc.setDate(21, 11, 2022); //Day, Month, Year
-  
-  lcd.home();
-  lcd.init();
-  lcd.clear();
-  lcd.backlight();
-  lcd.begin(16, 2);
-  lcd.print("F");
-  keypad.begin(makeKeymap(keys));
-  Wire.begin();
-
-  pinMode(btn[0], INPUT_PULLUP);
-  pinMode(btn[1], INPUT_PULLUP);
-  pinMode(btn[2], INPUT_PULLUP);
-  pinMode(btn[3], INPUT_PULLUP);
-  pinMode(btn[4], INPUT_PULLUP);
-  FIRST_PRESS_RESET = 1; 
-  // Initial start time.
-
-  lcd.setCursor(1, 0);
-  lcd.print("Initializing");
-  lcd.setCursor(1, 1);
-  lcd.print("machine");
-  Serial.println("Initializing the scale");    
-  // current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
-
-  // Serial.println("Before setting up the scale:");
-  // Serial.print("read: \t\t");
-  // Serial.println(current_food.read());      // print a raw reading from the ADC
-
-  // Serial.print("read average: \t\t");
-  // Serial.println(current_food.read_average(20));   // print the average of 20 readings from the ADC
-
-  // Serial.print("get value: \t\t");
-  // Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight (not set yet)
-  // lcd.setCursor(8, 1);
-  // lcd.print(".");
-  // Serial.print("get units: \t\t");
-  // Serial.println(current_food.get_units(5), 1);  // print the average of 5 readings from the ADC minus tare weight (not set) divided
-  //           // by the SCALE parameter (not set yet)
-  // current_food.begin(CURRFOOD_DOUT_PIN, CURRFOOD_SCK_PIN);
-  // current_food.set_scale(111.f);
-  // current_food.tare();               // reset the scale to 0
-
-  // amount_of_remaining_food.begin(REMAINFOOD_DOUT_PIN, REMAINFOOD_SCK_PIN);
-  // amount_of_remaining_food.set_scale(111.f);
-  // amount_of_remaining_food.tare(); 
-  // Serial.println("After setting up the scale:");
-  // lcd.setCursor(9, 1);
-  // lcd.print(".");
-  // Serial.print("read: \t\t");
-  // Serial.println(current_food.read());                 // print a raw reading from the ADC
-
-  // Serial.print("read average: \t\t");
-  // Serial.println(current_food.read_average(20));       // print the average of 20 readings from the ADC
-
-  // Serial.print("get value: \t\t");
-  // Serial.println(current_food.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight, set with tare()
-
-  // Serial.print("get units: \t\t");
-  // Serial.println(current_food.get_units(5), 1);        // print the average of 5 readings from the ADC minus tare weight, divided
-  // // by the SCALE parameter set with set_scale
-
-  // Serial.println("Readings:");
-  // // Servo
-  // lcd.setCursor(10, 1);
-  // lcd.print(".");
-  myservo.detach(); 
-  // initIndexOfCharKeypad();
-  // initFoodReleased();
-  updateMenu();
-}
-
 void checkFeedTime() {
   for (int i = 0; i < MAX_TIMES_SCHEDULE + 1; i++) {
     String time = "";
@@ -675,40 +631,102 @@ void checkFeedTime() {
     }
   }
 }
+
+void feedActiveStoreIntoFireStore() {
+  Serial.println("Sent");
+  String regChar = "FS";
+  String current_time = rtc.getTimeStr();
+  String current_date = rtc.getDateStr(2, FORMAT_MIDDLEENDIAN, '-');
+  int food = charArraytoInt(foodReleasedEachTime_array[3].food);
+  Arduino_softSerial.println( regChar + food + ' ' + current_date + ' ' + current_time );
+}
+
+void setup()
+{ 
+  startMillisFeedActive = millis();
+  startMillis = millis();   
+  startMillisTouch = millis();       
+  startMillisReceiveData = millis();     
+  Serial.begin(57600);
+
+  Arduino_softSerial.begin(9600);
+
+  restoreDataFromEEPROM();
+  /* Setup for real time clock */
+  // rtc.halt(false);
+  rtc.writeProtect(false);
+  // rtc.setTime(12, 9, 00);  //Hour, Min, Sec 
+  // rtc.setDate(22, 11, 2022); //Day, Month, Year
+  
+  lcd.home();
+  lcd.init();
+  lcd.clear();
+  lcd.backlight();
+  lcd.begin(16, 2);
+  keypad.begin(makeKeymap(keys));
+  Wire.begin();
+
+  pinMode(btn[0], INPUT_PULLUP);
+  pinMode(btn[1], INPUT_PULLUP);
+  pinMode(btn[2], INPUT_PULLUP);
+  pinMode(btn[3], INPUT_PULLUP);
+  pinMode(btn[4], INPUT_PULLUP);
+  FIRST_PRESS_RESET = 1; 
+  // Initial start time.
+
+  lcd.setCursor(1, 0);
+  lcd.print("Initializing");
+  lcd.setCursor(1, 1);
+  lcd.print("machine");
+  initLoadCell();
+  // Servo
+  lcd.setCursor(10, 1);
+  lcd.print(".");
+  myservo.detach(); 
+  // initIndexOfCharKeypad();
+  // initFoodReleased();
+  updateMenu();
+  feed_active = false;
+}
+
 void loop() {
   // weight sensor
-  feed_active = false;
-  checkFeedTime();
+  //feed_active = false;
   currentMillis = millis();  // Get the current "time" (actually the number of milliseconds since the program started)
-  if (current_food.wait_ready_timeout(10)) {
-  readingRemainFood = round(current_food.get_units());
-  if (readingRemainFood != lastReadingRemainFood) {
-    if ( feed_active && (!startMillisFeedActive || (currentMillis - startMillisFeedActive >= 600000)) 
-                          && currentDailyFood < charArraytoInt(MAX_FOOD_PER_DAY_array) ) {
-      Serial.println("active");
-      if (readingRemainFood >= 10) {
-        myservo.attach(7);
-        myservo.write(pos++);
-      } else {
-        currentDailyFood += charArraytoInt(foodReleasedEachTime_array[3].food);
-        myservo.detach();
-        feed_active = false;
-        startMillisFeedActive = millis();
-      } 
-    }
+  if (current_food.wait_ready_timeout(60)) {
+    readingCurrFood = round(current_food.get_units());
+    Serial.println(readingCurrFood);
+  if (readingCurrFood != lastReadingCurrFood) {
+
   }
-    lastReadingRemainFood = readingRemainFood;
+    lastReadingCurrFood = readingCurrFood;
   }
 
-  whileDisplayRealTimeClock = false;
-  
-  flag_confirm = false;
+  /* Check feed time is ready */
+  checkFeedTime();
   /* Received touch signal */
   if ( analogRead(TOUCH_SENSOR) > 650 ) {
     feed_active = true;
     Serial.print("touch!!");
     startMillisTouch = millis();
   }
+  if ( feed_active  && (!startMillisFeedActive || (currentMillis - startMillisFeedActive >= 600000)) 
+                           && currentDailyFood < charArraytoInt(MAX_FOOD_PER_DAY_array) ) {
+      Serial.println("active");
+      if (readingCurrFood >= 40) {
+        myservo.attach(6);
+        myservo.write(pos++);
+      } else {
+        currentDailyFood += charArraytoInt(foodReleasedEachTime_array[3].food);
+        myservo.detach();
+        feed_active = false;
+        feedActiveStoreIntoFireStore();
+        startMillisFeedActive = millis();
+      } 
+    }
+  whileDisplayRealTimeClock = false;
+  
+  flag_confirm = false;
 
   /* Received data from ESP8266 */
   while(Arduino_softSerial.available()) {
@@ -1202,6 +1220,7 @@ void action5() {
 void displayRealTimeClock()
 {
   // whileDisplayRealTimeClock = true;
+  lcd.clear();
   lcd.setCursor(0,1);
   lcd.print("Time:");
   lcd.setCursor(5, 1);
