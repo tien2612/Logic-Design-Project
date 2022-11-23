@@ -88,18 +88,18 @@ void loop() {
       else if (data == "data 3") received_data[3] = true;
       else if (data == "data 4") received_data[4] = true;
       else if (data[0] == 'F' && data[1] == 'S') {
-        // FS321 2012-02-27 13:27:00
-        /* Remove recognise character FS*/
-        data.remove(0, 2);
-        Serial.println(data);
-        String weight_str = data;
-        // Get weight and time from string
-        int i = 0;
-        for (; i < data.length() - 1; i++) if (data[i] == ' ') break;
-        weight_str.remove(i, data.length() - 1);
-        double weight = weight_str.toInt();
-        data.remove(0, i);
-        firestoreDataUpdate(weight, data);
+          // FS321 2012-02-27 13:27:00
+          /* Remove recognise character FS*/
+          data.remove(0, 2);
+          Serial.println(data);
+          String weight_str = data;
+          // Get weight and time from string
+          int i = 0;
+          for (; i < data.length() - 1; i++) if (data[i] == ' ') break;
+          weight_str.remove(i, data.length() - 1);
+          double weight = weight_str.toInt();
+          data.remove(0, i + 1);
+          firestoreDataUpdate(weight, data);
       }
       data = "";
     }

@@ -72,7 +72,9 @@ Keypad_I2C keypad = Keypad_I2C( makeKeymap(keys), rowPins, colPins, ROWS, COLS, 
 
 /* Real time clock */
 DS1302 rtc(A1, A2, A3); //RST,DAT,CLK Pins of the DS1302 Module 
-
+/* Software Serial for communicate with wifi */
+SoftwareSerial Arduino_softSerial(10, 11); // RX: 10 - TX: 11
+String data_send = "";
 /* Declare for any var about time here. */
 unsigned long startMillis;        // Some global variables available anywhere in the program
 unsigned long currentMillis;      // Current time since the program started 
@@ -118,6 +120,7 @@ struct indexOfCharKeypad {
   int maxFood;
 } ;
 
+bool forceFeed = false;
 indexOfCharKeypad indexKeypad;
 foodReleased foodReleasedEachTime_array[4];
 char MAX_FOOD_PER_DAY_array[4] = {'1', '0', '0', '0'};
@@ -598,21 +601,42 @@ void updateChar(char *arr, String data, int size) {
     }
 }
 
-int charArraytoInt(char *arr) {
+int charArraytoInt(char *arr, int size) {
   int number = 0;
-  for (int i = 0; i < indexKeypad.maxFood; i++) {
+  for (int i = 0; i < size; i++) {
     number *= 10;
     number += arr[i] - 48;
   }
   return number;
 }
-SoftwareSerial Arduino_softSerial(10, 11); // RX: 10 - TX: 11
-String data_send = "";
+
+String reverseArr(String arr) {
+    String res = "xxxxxxxxxx";
+    int i = 0, j = 6;
+    for (; j <= 9; i++, j++) {
+        res[i] = arr[j];
+    }
+    
+    res[i++] = '-'; 
+    
+    for (j = 0; j < 2; j++, i++) {
+        res[i] = arr[j];
+    }
+    
+    for (int j = 2; j <= 4; j++, i++) {
+        res[i] = arr[j];   
+    }
+    
+    return res;
+}
 
 void checkFeedTime() {
+  /* Time feed */
   for (int i = 0; i < MAX_TIMES_SCHEDULE + 1; i++) {
     String time = "";
     String current_time = rtc.getTimeStr();
+    String current_date = rtc.getDateStr(2, FORMAT_MIDDLEENDIAN, '-');
+    current_date = reverseArr(current_date);
     int weight = 0;
     for (int j = 0; j < 6; j++) {
       if (j % 2 == 0 && j != 0) time += ':';
@@ -625,19 +649,23 @@ void checkFeedTime() {
     if (current_time == time) {
       feed_active = true;
       String regChar = "FS";
-      int food = charArraytoInt(foodReleasedEachTime_array[i].food);
-      Arduino_softSerial.println(regChar + food + " " + rtc.getDateStr(2, FORMAT_MIDDLEENDIAN, '-') + " " + rtc.getTimeStr());
+      int food = charArraytoInt(foodReleasedEachTime_array[i].food, indexKeypad.releasedFood[i]);
+      Arduino_softSerial.println( regChar + food + ' ' + current_date + ' ' + current_time );      
       time = "";
+      delay(1000);
     }
   }
 }
 
 void feedActiveStoreIntoFireStore() {
+  forceFeed = true;
   Serial.println("Sent");
   String regChar = "FS";
   String current_time = rtc.getTimeStr();
   String current_date = rtc.getDateStr(2, FORMAT_MIDDLEENDIAN, '-');
-  int food = charArraytoInt(foodReleasedEachTime_array[3].food);
+  current_date = reverseArr(current_date);
+
+  int food = charArraytoInt(foodReleasedEachTime_array[3].food, indexKeypad.releasedFood[3]);
   Arduino_softSerial.println( regChar + food + ' ' + current_date + ' ' + current_time );
 }
 
@@ -655,8 +683,8 @@ void setup()
   /* Setup for real time clock */
   // rtc.halt(false);
   rtc.writeProtect(false);
-  // rtc.setTime(12, 9, 00);  //Hour, Min, Sec 
-  // rtc.setDate(22, 11, 2022); //Day, Month, Year
+  // rtc.setTime(23, 57, 30);  //Hour, Min, Sec 
+  // rtc.setDate(23, 11, 2022); //Day, Month, Year
   
   lcd.home();
   lcd.init();
@@ -687,6 +715,7 @@ void setup()
   // initFoodReleased();
   updateMenu();
   feed_active = false;
+  forceFeed = false;
 }
 
 void loop() {
@@ -703,28 +732,29 @@ void loop() {
   }
 
   /* Check feed time is ready */
+  //Serial.println(rtc.getTimeStr());
   checkFeedTime();
   /* Received touch signal */
-  if ( analogRead(TOUCH_SENSOR) > 650 ) {
+  if ( analogRead(TOUCH_SENSOR) > 900) {
     feed_active = true;
     Serial.print("touch!!");
     startMillisTouch = millis();
   }
-  if ( feed_active  && (!startMillisFeedActive || (currentMillis - startMillisFeedActive >= 600000)) 
-                           && currentDailyFood < charArraytoInt(MAX_FOOD_PER_DAY_array) ) {
+  //Serial.println (analogRead(TOUCH_SENSOR) );
+  if ( feed_active  && (!startMillisFeedActive || (currentMillis - startMillisFeedActive >= 600000) || forceFeed) 
+                           && currentDailyFood < charArraytoInt(MAX_FOOD_PER_DAY_array, indexKeypad.maxFood) ) {
       Serial.println("active");
       if (readingCurrFood >= 40) {
         myservo.attach(6);
         myservo.write(pos++);
       } else {
-        currentDailyFood += charArraytoInt(foodReleasedEachTime_array[3].food);
+        currentDailyFood += charArraytoInt(foodReleasedEachTime_array[3].food, indexKeypad.releasedFood[3]);
         myservo.detach();
         feed_active = false;
         feedActiveStoreIntoFireStore();
         startMillisFeedActive = millis();
       } 
     }
-  whileDisplayRealTimeClock = false;
   
   flag_confirm = false;
 
@@ -735,7 +765,7 @@ void loop() {
     Serial.println(data);
   }
   if (data[0] == 'R') {
-    feed_active = true;
+    
     data.remove(0, 1);
     updateChar(foodReleasedEachTime_array[3].food, data, data.length());
     indexKeypad.releasedFood[3] = data.length();
@@ -744,6 +774,7 @@ void loop() {
     eepromWrite(currentAddress_indexKeypad, &indexKeypad, sizeof(indexKeypad));
     
     Arduino_softSerial.println("data 0");
+    feedActiveStoreIntoFireStore();
     delay(60);
   } else if (data[0] == 'X') {
     data.remove(0, 1);
