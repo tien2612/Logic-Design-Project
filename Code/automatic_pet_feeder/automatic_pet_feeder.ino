@@ -22,7 +22,7 @@
 #include <Wire.h>
 #include <DS1302.h>
 #include <HX711.h>
-#include <PWMServo.h>
+#include <ServoTimer2.h>
 #include <EEPROM.h>
 #include <SoftwareSerial.h>
 #include <PCM.h>
@@ -154,7 +154,7 @@ String data;
 int pos = 0;
 int wifi_index = 0;
 /* Servo */
-PWMServo myservo;  // create servo object to control a servo
+ServoTimer2 myservo;  // create servo object to control a servo
 /* EEPROM address*/
 int flag_sche0_address = 0;
 int flag_sche1_address = 1;
@@ -552,7 +552,6 @@ void initLoadCell() {
     Serial.print("read: \t\t");
     Serial.println(current_food.read());      // print a raw reading from the ADC
 
-    
     Serial.print("read average: \t\t");
     Serial.println(current_food.read_average(20));   // print the average of 20 readings from the ADC
   
@@ -698,20 +697,21 @@ void setup()
   startMillisWaitPetEat = millis();
   Serial.begin(57600);
   Arduino_softSerial.begin(9600);
-
   //restoreDataFromEEPROM();
   /* Setup for real time clock */
-  // rtc.halt(false);
+  rtc.halt(false);
   rtc.writeProtect(false);
-  // rtc.setTime(23, 57, 30);  //Hour, Min, Sec 
-  // rtc.setDate(23, 11, 2022); //Day, Month, Year
-  
+  // rtc.setTime(14, 24, 00);  //Hour, Min, Sec 
+  // rtc.setDate(26, 11, 2022); //Day, Month, Year
+
   lcd.home();
   lcd.init();
   lcd.clear();
   lcd.backlight();
   lcd.begin(16, 2);
+
   keypad.begin(makeKeymap(keys));
+
   Wire.begin();
 
   pinMode(btn[0], INPUT_PULLUP);
@@ -725,18 +725,21 @@ void setup()
   lcd.print("Initializing");
   lcd.setCursor(1, 1);
   lcd.print("machine");
-  //initLoadCell();
+  initLoadCell();
   // Servo
   lcd.setCursor(10, 1);
   lcd.print(".");
   myservo.detach(); 
-  // initIndexOfCharKeypad();
+  // myservo.attach(6);
+  // myservo.attach(7);
+    // initIndexOfCharKeypad();
   // initFoodReleased();
   updateMenu();
   feed_active = false;
   forceFeed = false;
   waitForPet = false;
-  
+  feed_active = true;
+  indexKeypad.releasedFood[3] = 3;
 }
 
 void loop() {
@@ -744,33 +747,35 @@ void loop() {
   //feed_active = false;
   if (checkNewDay() == true) currentDailyFood = 0;
   /* If 10s have passed since food is released, the pet has not arrived. Use audio to call pet for 20s */
-  if (waitForPet && (currentMillis - startMillisWaitPetEat >= 10000 && currentMillis - startMillisWaitPetEat <= 30000)) {
-      startPlayback(sample, sizeof(sample));
-      delay(3000);
-  }
+  // if (waitForPet && (currentMillis - startMillisWaitPetEat >= 10000 && currentMillis - startMillisWaitPetEat <= 30000)) {
+  //     Serial.println("wait");
+  //     startPlayback(sample, sizeof(sample));
+  //     delay(2500);
+  // }
   currentMillis = millis();  // Get the current "time" (actually the number of milliseconds since the program started)
-  if (current_food.wait_ready_timeout(60)) {
-    readingCurrFood = round(current_food.get_units());
-    Serial.println(readingCurrFood);
-  if (readingCurrFood != lastReadingCurrFood) {
+  if (amount_of_remaining_food.wait_ready_timeout(60)) {
+    Serial.println(readingRemainFood);
+    readingRemainFood = round(amount_of_remaining_food.get_units());
+    Serial.println(readingRemainFood);
+  if (readingRemainFood != lastReadingRemainFood) {
 
   }
-    lastReadingCurrFood = readingCurrFood;
+    lastReadingRemainFood = readingRemainFood;
   }
 
+  
   /* Check feed time is ready */
-  //Serial.println(rtc.getTimeStr());
   checkFeedTime();
   /* Received touch signal */
-  if ( analogRead(TOUCH_SENSOR) > 900) {
-    feed_active = true;
-    //Serial.print("touch!!");
-    startMillisTouch = millis();
-  }
+  // if ( analogRead(TOUCH_SENSOR) > 900) {
+  //   feed_active = true;
+  //   Serial.println("Touch triggered!");
+  //   startMillisTouch = millis();
+  // }
   /* Feed for pet only current daily food + food is released daily less than max food per day */
-  if ( feed_active  && (!startMillisFeedActive || (currentMillis - startMillisFeedActive >= 600000) || forceFeed) 
+  if ( feed_active  && (!startMillisFeedActive || (currentMillis - startMillisFeedActive >= 100000) || forceFeed) 
                            && (currentDailyFood + charArraytoInt(foodReleasedEachTime_array[3].food, indexKeypad.releasedFood[3])
-                            < charArraytoInt(MAX_FOOD_PER_DAY_array, indexKeypad.maxFood)) ) {
+                            <= charArraytoInt(MAX_FOOD_PER_DAY_array, indexKeypad.maxFood)) ) {
       Serial.println("active");
       if (readingCurrFood >= 40) {
         myservo.attach(6);
@@ -781,7 +786,9 @@ void loop() {
         feed_active = false;
         waitForPet = true; // wait for pet comes to eat.
         feedActiveStoreIntoFireStore(); // push data into firestore
+        forceFeed = false;
         startMillisFeedActive = millis();
+        startMillisWaitPetEat = millis();
       } 
     }
   
