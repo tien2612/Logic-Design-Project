@@ -662,6 +662,7 @@ void checkFeedTime() {
 }
 
 void feedActiveStoreIntoFireStore() {
+  feed_active = true;
   forceFeed = true;
   Serial.println("Sent");
   String regChar = "FS";
@@ -730,7 +731,7 @@ void setup()
   lcd.setCursor(10, 1);
   lcd.print(".");
   myservo.detach(); 
-  // myservo.attach(6);
+  ///myservo.attach(6);
   // myservo.attach(7);
     // initIndexOfCharKeypad();
   // initFoodReleased();
@@ -738,7 +739,7 @@ void setup()
   feed_active = false;
   forceFeed = false;
   waitForPet = false;
-  feed_active = true;
+  feed_active = false;
   indexKeypad.releasedFood[3] = 3;
 }
 
@@ -747,7 +748,7 @@ void loop() {
   //feed_active = false;
   if (checkNewDay() == true) currentDailyFood = 0;
   /* If 10s have passed since food is released, the pet has not arrived. Use audio to call pet for 20s */
-  // if (waitForPet && (currentMillis - startMillisWaitPetEat >= 10000 && currentMillis - startMillisWaitPetEat <= 30000)) {
+  // if (waitForPet && (currentMillis - startMillisWaitPetEat >= 30000 && currentMillis - startMillisWaitPetEat <= 60000)) {
   //     Serial.println("wait");
   //     startPlayback(sample, sizeof(sample));
   //     delay(2500);
@@ -767,17 +768,18 @@ void loop() {
   /* Check feed time is ready */
   checkFeedTime();
   /* Received touch signal */
-  // if ( analogRead(TOUCH_SENSOR) > 900) {
-  //   feed_active = true;
-  //   Serial.println("Touch triggered!");
-  //   startMillisTouch = millis();
-  // }
+  //Serial.println(analogRead(TOUCH_SENSOR));
+  if ( analogRead(TOUCH_SENSOR) > 900) {
+    Serial.println(analogRead(TOUCH_SENSOR));
+    feed_active = true;
+    Serial.println("Touch triggered!");
+    startMillisTouch = millis();
+  }
   /* Feed for pet only current daily food + food is released daily less than max food per day */
   if ( feed_active  && (!startMillisFeedActive || (currentMillis - startMillisFeedActive >= 100000) || forceFeed) 
-                           && (currentDailyFood + charArraytoInt(foodReleasedEachTime_array[3].food, indexKeypad.releasedFood[3])
-                            <= charArraytoInt(MAX_FOOD_PER_DAY_array, indexKeypad.maxFood)) ) {
+                            ) {
       Serial.println("active");
-      if (readingCurrFood >= 40) {
+      if (readingRemainFood >= 40) {
         myservo.attach(6);
         myservo.write(pos++);
       } else {
