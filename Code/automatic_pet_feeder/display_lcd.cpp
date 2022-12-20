@@ -1,6 +1,34 @@
 #include "display_lcd.h"
 
-int menu = 0;
+double readingCurrFood = 0;
+double lastReadingCurrFood = 0;
+double readingRemainFood = 0;
+double lastReadingRemainFood = 0;
+
+int mode = RC_MODE;                      // State to display on LCD (for button0).
+int counter;                             // Variable for calculating the total number of digits.
+int status = INIT_MODE;                   
+int menu = 1;
+
+bool flag_settingSchedule;
+bool flag_settingMaxFood;
+bool flag_sch0_active = false;             // If flag = 1 then feed the animal according to the time0 and vice versa.
+bool flag_sch1_active = false;            // If flag = 1 then feed the animal according to the time1 and vice versa.
+bool flag_sch2_active = false;            // If flag = 1 then feed the animal according to the time2 and vice versa.
+bool FIRST_PRESS_RESET;
+bool flag_confirm = false;
+bool flag_confirm_with_keypad = false;
+bool waitForPet = false;
+
+LiquidCrystal_I2C lcd(LCDADDR,16,2);  // set the LCD address to 0x20 for a 16 chars and 2 line display
+
+indexOfCharKeypad indexKeypad;
+foodReleased foodReleasedEachTime_array[4];
+
+char MAX_FOOD_PER_DAY_array[4] = {'1', '0', '0', '0'};
+char setSchedule0[6] = {'0', '0', '0', '0', '0', '0'};
+char setSchedule1[6] = {'0', '0', '0', '0', '0', '0'};
+char setSchedule2[6] = {'0', '0', '0', '0', '0', '0'};
 
 int calDigitofNumber(int number) {
     int count = 0;
