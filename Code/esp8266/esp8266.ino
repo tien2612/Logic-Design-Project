@@ -18,6 +18,7 @@
 //
 #define FIREBASE_AUTH "bZjJFG5UBlzLiiBfLB4Aj448icxuWbxoTOXkY85i"
 #define FIREBASE_PROJECT_ID "pet-app-fd9d6"
+#define RETRY_TIMES         5
 
 FirebaseData fbdo;
 FirebaseAuth auth;
@@ -30,8 +31,11 @@ int received_data[5] = {0};
 int intValue;
 float floatValue;
 bool signupOK = false;
-SoftwareSerial ESP8266_softSerial(13, 12);
-
+static int retry[5] = {0};
+unsigned long int startMillisRetry[5];
+unsigned long int currentMillis;
+SoftwareSerial ESP8266_softSerial(13, 12); // RX - TX (D7 - D6)
+//Soft...	Arduino_softserial(10, 11) - (10, 13);
 void initWifi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to Wi-Fi");
@@ -65,18 +69,23 @@ void initWifi() {
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
 }
+
+void initTimer() {
+  for (int i = 0; i < 5; i++) {
+    startMillisRetry[i] = millis();
+  }
+  currentMillis = millis();
+}
 void setup() {
   Serial.begin(57600);
   ESP8266_softSerial.begin(9600);
   initWifi();
+  initTimer();
 }
 
-void receiveDataFromArduino() {
-
-}
 void loop() {
     /* ESP8266 Received msg from Arduino */
-
+    currentMillis = millis();
     while(ESP8266_softSerial.available()) {
       data = ESP8266_softSerial.readStringUntil('\n');
       /* Remove end line */
@@ -101,6 +110,14 @@ void loop() {
           data.remove(0, i + 1);
           firestoreDataUpdate(weight, data);
       }
+      else if (data[0] == 'C') {
+        Serial.println(data);
+        data.remove(0, 1);
+        int weight = data.toInt();
+        Serial.println(weight);
+
+        Firebase.RTDB.setInt(&fbdo, "/container/remaining", weight);
+      }
       data = "";
     }
         
@@ -113,6 +130,12 @@ void loop() {
         wifi_index = 1;
         ESP8266_softSerial.println(dulieu);
         Serial.println(dulieu);
+        startMillisRetry[0] = millis();
+        if (retry[0] < RETRY_TIMES) retry[0]++;
+        else {
+          retry[0] = 0;
+          received_data[0] = true;
+        }
         dulieu = "";
       }
 
@@ -123,6 +146,11 @@ void loop() {
         wifi_index = 1;
         ESP8266_softSerial.println(dulieu);
         Serial.println(dulieu);
+        if (retry[1] < RETRY_TIMES) retry[1]++;
+        else {
+          retry[1] = 0;
+          received_data[1] = true;
+        }
         dulieu = "";
       }
       
@@ -133,6 +161,11 @@ void loop() {
         wifi_index = 1;
         ESP8266_softSerial.println(dulieu);
         Serial.println(dulieu);
+        if (retry[2] < RETRY_TIMES) retry[2]++;
+        else {
+          retry[2] = 0;
+          received_data[2] = true;
+        }
         dulieu = "";
       }
 
@@ -144,6 +177,11 @@ void loop() {
         wifi_index = 1;
         ESP8266_softSerial.println(dulieu);
         Serial.println(dulieu);
+        if (retry[3] < RETRY_TIMES) retry[3]++;
+        else {
+          retry[3] = 0;
+          received_data[3] = true;
+        }
         dulieu = "";
       }
 
@@ -177,10 +215,6 @@ void loop() {
         Serial.println("Delete 3");
         received_data[3] = false;
         Firebase.RTDB.deleteNode(&fbdo, "/pet_app_demo/sche2");
-      }
-      if (received_data[4]) {
-        received_data[4] = false;
-        Firebase.RTDB.deleteNode(&fbdo, "/pet_app_demo/maxfood");
       }
       wifi_index = 0; 
     }
